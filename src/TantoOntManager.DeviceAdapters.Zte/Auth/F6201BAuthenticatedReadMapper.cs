@@ -69,18 +69,24 @@ public static class F6201BAuthenticatedReadMapper
             .Where(item => item.RouteKind is not AuthenticatedRouteKind.MenuFolder
                 and not AuthenticatedRouteKind.UnresolvedDynamicRoute
                 and not AuthenticatedRouteKind.ActionEndpoint)
-            .OrderBy(item => F6201BPriorityMenu.Match(item.MenuText) is null ? 1 : 0)
+            .OrderBy(item => F6201BFirmwareCompatibility.SafeReadOrder(item))
             .ToList();
 
         var queued = new HashSet<string>(pending.Select(item => item.TypeAndTag), StringComparer.OrdinalIgnoreCase);
         var totalBytes = pages.Sum(item => item.Body.Length);
-        for (var i = 0; i < pending.Count; i++)
+        while (pending.Count > 0)
         {
-            var candidate = pending[i];
             if (pages.Count >= F6201BV9310P8N1AuthContract.MaxSafeReadPages
                 || totalBytes >= F6201BV9310P8N1AuthContract.MaxTotalBodyBytes)
             {
                 break;
+            }
+
+            var candidate = pending[0];
+            pending.RemoveAt(0);
+            if (accessed.ContainsKey(candidate.TypeAndTag))
+            {
+                continue;
             }
 
             var parts = candidate.TypeAndTag.Split(':');
@@ -140,6 +146,17 @@ public static class F6201BAuthenticatedReadMapper
                     pending.Add(item);
                 }
             }
+
+            pending = pending
+                .OrderBy(item => F6201BFirmwareCompatibility.SafeReadOrder(item))
+                .ToList();
+
+            if (F6201BFirmwareCompatibility.Classify(
+                    F6201BV9310P8N1DeviceInformationParser.Parse(pages.ToArray()).SoftwareVersion)
+                == FirmwareCompatibility.ConfirmedIncompatible)
+            {
+                break;
+            }
         }
 
         var mergedInventory = inventory.Select(item =>
@@ -177,7 +194,8 @@ public static class F6201BAuthenticatedReadMapper
             LoginPostCount = transport.LoginPostCount,
             LogoutPostCount = transport.LogoutPostCount,
             ConfigPostCount = transport.ConfigPostCount,
-            PostCount = transport.PostCount
+            PostCount = transport.PostCount,
+            FirmwareCompatibility = F6201BFirmwareCompatibility.Classify(identity)
         };
 
         return new AuthenticatedReadMapResult(map, snapshot);

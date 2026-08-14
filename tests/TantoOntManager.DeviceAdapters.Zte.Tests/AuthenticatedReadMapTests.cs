@@ -89,6 +89,7 @@ public sealed class AuthenticatedReadMapTests
         result.Map.PriorityFound.Should().Contain(F6201BPriorityMenu.PonInformation);
         result.Map.PriorityMissing.Should().BeEmpty();
         result.Snapshot.Identity.Firmware.HardwareVersion.Should().Be("V9.3.12");
+        result.Snapshot.FirmwareCompatibility.Should().Be(FirmwareCompatibility.ConfirmedCompatible);
         result.Snapshot.Diagnostics.Pon.OnuState.Should().Be("O5");
         result.Snapshot.Diagnostics.WanProfiles.Should().NotBeEmpty();
 
@@ -110,6 +111,7 @@ public sealed class AuthenticatedReadMapTests
         var result = await F6201BAuthenticatedReadMapper.MapAsync(transport, EmptySnapshot(), NullLogger.Instance, CancellationToken.None);
         result.Map.PriorityMissing.Should().Contain(F6201BPriorityMenu.DeviceStatus);
         result.Map.Note.Should().Contain("Nenhum endpoint foi adivinhado");
+        result.Snapshot.FirmwareCompatibility.Should().Be(FirmwareCompatibility.Unconfirmed);
         transport.Gets.Should().NotContain(uri => uri.Contains("status_dev_guess"));
     }
 
@@ -128,6 +130,27 @@ public sealed class AuthenticatedReadMapTests
         result.Map.Entries.Should().Contain(item => item.Tag == "firewall_homepage_lua" && item.RouteKind == AuthenticatedRouteKind.HomepageShell);
         result.Map.Entries.Should().Contain(item => item.Tag == "devStatus" && item.RouteKind == AuthenticatedRouteKind.DataEndpoint);
         result.Snapshot.Identity.Firmware.HardwareVersion.Should().Be("V9.3.12");
+        result.Snapshot.FirmwareCompatibility.Should().Be(FirmwareCompatibility.ConfirmedCompatible);
+    }
+
+    [Fact]
+    public async Task Mapper_marks_real_different_firmware_incompatible_without_config_post()
+    {
+        var transport = new MapperTransport
+        {
+            DeviceInfoHtml = """
+                             <table>
+                               <tr><td>Hardware Version</td><td>V9.3.12</td></tr>
+                               <tr><td>Software Version</td><td>V9.3.10P9N1</td></tr>
+                             </table>
+                             """
+        };
+        var result = await F6201BAuthenticatedReadMapper.MapAsync(transport, EmptySnapshot(), NullLogger.Instance, CancellationToken.None);
+        result.Snapshot.FirmwareCompatibility.Should().Be(FirmwareCompatibility.ConfirmedIncompatible);
+        result.Snapshot.Identity.Firmware.SoftwareVersion.Should().Be("V9.3.10P9N1");
+        transport.Posts.Should().BeEmpty();
+        transport.ConfigPostCount.Should().Be(0);
+        F6201BFirmwareCompatibility.AllowsWrite(result.Snapshot.FirmwareCompatibility).Should().BeFalse();
     }
 
     [Fact]
@@ -163,6 +186,7 @@ public sealed class AuthenticatedReadMapTests
     private sealed class MapperTransport : IBoundOntTransport
     {
         public string HomeHtml { get; set; } = Fixture("zte-f6201b-v9310p8n1-authenticated-menu-map.html");
+        public string? DeviceInfoHtml { get; set; }
         public List<string> Gets { get; } = [];
         public List<string> Posts { get; } = [];
         public IPAddress BoundAddress { get; } = IPAddress.Parse("192.168.100.1");
@@ -204,14 +228,12 @@ public sealed class AuthenticatedReadMapTests
             {
                 body = Fixture("zte-f6201b-v9310p8n1-wan.json");
             }
-            else if (pathAndQuery.Contains("devStatus", StringComparison.OrdinalIgnoreCase)
-                     && pathAndQuery.Contains("menuData", StringComparison.OrdinalIgnoreCase))
-            {
-                body = Fixture("zte-f6201b-v9310p8n1-menu-data-devinfo.json");
-            }
             else if (pathAndQuery.Contains("devStatus", StringComparison.OrdinalIgnoreCase))
             {
-                body = Fixture("zte-f6201b-v9310p8n1-device-info.html");
+                body = DeviceInfoHtml
+                       ?? (pathAndQuery.Contains("menuData", StringComparison.OrdinalIgnoreCase)
+                           ? Fixture("zte-f6201b-v9310p8n1-menu-data-devinfo.json")
+                           : Fixture("zte-f6201b-v9310p8n1-device-info.html"));
             }
             else
             {

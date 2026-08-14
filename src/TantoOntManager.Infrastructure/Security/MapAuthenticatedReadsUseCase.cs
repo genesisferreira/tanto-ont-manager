@@ -4,6 +4,7 @@ using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.DeviceAdapters.Zte.Auth;
 using TantoOntManager.Domain.Audit;
 using TantoOntManager.Domain.Common;
+using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Discovery;
 using TantoOntManager.Domain.Sessions;
 
@@ -38,6 +39,17 @@ public sealed class MapAuthenticatedReadsUseCase : IMapAuthenticatedReadsUseCase
         }
 
         var mapped = await F6201BAuthenticatedReadMapper.MapAsync(transport, snapshot, _logger, cancellationToken);
+        if (mapped.Snapshot.FirmwareCompatibility == FirmwareCompatibility.ConfirmedIncompatible)
+        {
+            _sessionStore.SetState(AuthSessionState.ContractIncompatible);
+            transport.ClearCookiesAndState("firmware-incompativel");
+            _sessionStore.End("firmware-incompativel");
+            var shown = F6201BFirmwareCompatibility.SanitizeForOperator(mapped.Snapshot.Identity.Firmware.SoftwareVersion);
+            return Result.Failure<AuthenticatedReadMap>(Error.Create(
+                ErrorCodes.ContractIncompatible,
+                "A firmware lida (" + shown + ") não é a V9.3.10P8N1 homologada. A sessão foi encerrada."));
+        }
+
         _sessionStore.RememberReadMap(mapped.Map);
         _sessionStore.ReplaceSnapshot(mapped.Snapshot);
         _audit.Record(AuditEvent.Create(

@@ -1,5 +1,6 @@
 using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.Domain.Common;
+using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Discovery;
 
 namespace TantoOntManager.DeviceAdapters.Zte.Auth;
@@ -30,6 +31,7 @@ public static class F6201BAuthenticatedSafeReader
 
         var pending = inventory
             .Where(item => item.Classification == SafeReadClassification.SafeRead)
+            .OrderBy(F6201BFirmwareCompatibility.SafeReadOrder)
             .ToList();
 
         while (pending.Count > 0
@@ -110,6 +112,17 @@ public static class F6201BAuthenticatedSafeReader
                 {
                     pending.Add(item);
                 }
+            }
+
+            pending = pending
+                .OrderBy(F6201BFirmwareCompatibility.SafeReadOrder)
+                .ToList();
+
+            if (F6201BFirmwareCompatibility.Classify(
+                    F6201BV9310P8N1DeviceInformationParser.Parse(pages.ToArray()).SoftwareVersion)
+                == FirmwareCompatibility.ConfirmedIncompatible)
+            {
+                break;
             }
         }
 

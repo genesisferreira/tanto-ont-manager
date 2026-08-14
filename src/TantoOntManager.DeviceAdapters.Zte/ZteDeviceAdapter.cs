@@ -139,7 +139,7 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter
             WriteOperationsSupportedByAdapter: false,
             Notes:
             [
-                "Fase 0.1.4.1-lab: resolução estática de rotas autenticadas da F6201B a partir de literais e menuTreeJSON.",
+                "Fase 0.1.4.2-lab: firmware ausente permanece não confirmada; incompatibilidade exige versão real lida.",
                 "WAN, VLAN, PPPoE e TR-069 não são gravados.",
                 "F6600P e F670L têm estrutura preparada, sem detector específico nesta entrega.",
                 "Gravação desativada por padrão e sem contrato homologado."

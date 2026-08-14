@@ -35,10 +35,18 @@ public static class F6201BV9310P8N1DeviceInformationParser
 {
     public static F6201BParsedDeviceInformation Parse(params (string Page, string Body)[] pages)
     {
-        var evidence = new List<FieldEvidence>();
-        string? Read(string field, params string[] keys)
+        var source = pages
+            .Where(page => F6201BFirmwareCompatibility.LooksLikeDeviceInformationPage(page.Page, page.Body))
+            .ToArray();
+        if (source.Length == 0)
         {
-            foreach (var page in pages)
+            return new F6201BParsedDeviceInformation(null, null, null, null, null, null, [], false);
+        }
+
+        var evidence = new List<FieldEvidence>();
+        string? Read(params string[] keys)
+        {
+            foreach (var page in source)
             {
                 var parsed = F6201BLabeledValueReader.Read(page.Page, page.Body, keys);
                 if (parsed.Found)
@@ -51,12 +59,12 @@ public static class F6201BV9310P8N1DeviceInformationParser
             return null;
         }
 
-        var deviceType = Read("DeviceType", "Device Type", "DeviceType", "ModelName", "Model Name", "Frm_ModelName");
-        var hardware = Read("HardwareVersion", "Hardware Version", "HardwareVer", "HwVer", "Frm_HardwareVer", "HWVer");
-        var software = Read("SoftwareVersion", "Software Version", "SoftwareVer", "SwVer", "Frm_SoftwareVer", "SWVer");
-        var boot = Read("BootVersion", "Boot Version", "BootVer", "Frm_BootVer");
-        var serial = Read("SerialNumber", "Serial Number", "SerialNum", "SerialNumber", "Frm_SerialNumber", "GPON SN", "GPONSN");
-        var mac = Read("MacAddress", "MAC Address", "MacAddr", "MACAddress", "Frm_MACAddress");
+        var deviceType = Read("Device Type", "DeviceType", "ModelName", "Model Name", "Frm_ModelName");
+        var hardware = Read("Hardware Version", "HardwareVer", "HwVer", "Frm_HardwareVer", "HWVer");
+        var software = Read("Software Version", "SoftwareVer", "SwVer", "Frm_SoftwareVer", "SWVer");
+        var boot = Read("Boot Version", "BootVer", "Frm_BootVer");
+        var serial = Read("Serial Number", "SerialNum", "SerialNumber", "Frm_SerialNumber", "GPON SN", "GPONSN");
+        var mac = Read("MAC Address", "MacAddr", "MACAddress", "Frm_MACAddress");
 
         var found = new[] { deviceType, hardware, software, boot, serial, mac }.Count(value => !string.IsNullOrWhiteSpace(value));
         return new F6201BParsedDeviceInformation(
@@ -269,14 +277,9 @@ public static class F6201BV9310P8N1AuthenticatedPageParser
             false,
             "Leitura autenticada somente GET, firmware F6201B V9.3.10P8N1.");
 
-    public static bool FirmwareMatchesWhenPresent(DeviceIdentity identity)
-    {
-        var software = identity.Firmware.SoftwareVersion;
-        if (string.IsNullOrWhiteSpace(software))
-        {
-            return true;
-        }
+    public static FirmwareCompatibility ClassifyFirmware(DeviceIdentity identity)
+        => F6201BFirmwareCompatibility.Classify(identity);
 
-        return software.Contains(F6201BV9310P8N1AuthContract.ExpectedSoftware, StringComparison.OrdinalIgnoreCase);
-    }
+    public static bool FirmwareMatchesWhenPresent(DeviceIdentity identity)
+        => F6201BFirmwareCompatibility.Classify(identity) != FirmwareCompatibility.ConfirmedIncompatible;
 }

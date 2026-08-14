@@ -3,6 +3,7 @@ using FluentAssertions;
 using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.DeviceAdapters.Zte.Auth;
 using TantoOntManager.Domain.Common;
+using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Discovery;
 using TantoOntManager.Security.Export;
 
@@ -98,6 +99,9 @@ public sealed class F6201BParserTests
         altered.SoftwareVersion.Should().BeNull();
         F6201BV9310P8N1AuthenticatedPageParser.FirmwareMatchesWhenPresent(
             F6201BV9310P8N1AuthenticatedPageParser.ToIdentity("ZTE", "F6201B", missing)).Should().BeTrue();
+        F6201BV9310P8N1AuthenticatedPageParser.ClassifyFirmware(
+            F6201BV9310P8N1AuthenticatedPageParser.ToIdentity("ZTE", "F6201B", missing))
+            .Should().Be(FirmwareCompatibility.Unconfirmed);
     }
 
     [Fact]

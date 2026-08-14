@@ -18,4 +18,7 @@ public sealed record AuthenticatedReadSnapshot(
     IReadOnlyList<FieldEvidence> FieldEvidence,
     int LoginPostCount,
     int LogoutPostCount,
-    int ConfigPostCount);
+    int ConfigPostCount)
+{
+    public FirmwareCompatibility FirmwareCompatibility { get; init; } = FirmwareCompatibility.Unconfirmed;
+}

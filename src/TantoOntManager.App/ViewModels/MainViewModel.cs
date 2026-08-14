@@ -519,7 +519,7 @@ public sealed class MainViewModel : ViewModelBase
 
             AuthState = result.SessionState;
             AuthMessage = result.Outcome == AuthenticationOutcome.Succeeded
-                ? "Autenticado — somente leitura. A senha foi removida da memória."
+                ? result.Snapshot!.FirmwareCompatibility.ToAuthenticatedUiLabel() + ". A senha foi removida da memória."
                 : result.Error?.Message ?? AuthState.ToUiLabel();
             LastOperation = $"Login: {AuthState.ToUiLabel()} POST={result.PostCount} HTTP={result.HttpStatus?.ToString() ?? "—"}";
 
@@ -528,8 +528,10 @@ public sealed class MainViewModel : ViewModelBase
             if (result.Outcome == AuthenticationOutcome.Succeeded && result.Snapshot is { } snapshot)
             {
                 Status = ApplicationStatus.Authenticated;
-                StatusLabel = "Autenticado — somente leitura";
-                SessionPhase = "Sessão autenticada";
+                StatusLabel = snapshot.FirmwareCompatibility.ToAuthenticatedUiLabel();
+                SessionPhase = snapshot.FirmwareCompatibility == FirmwareCompatibility.Unconfirmed
+                    ? "Sessão autenticada — firmware ainda não confirmada"
+                    : "Sessão autenticada";
                 ApplySnapshot(snapshot);
             }
             else if (result.SessionState == AuthSessionState.CertificateChanged)
@@ -549,6 +551,9 @@ public sealed class MainViewModel : ViewModelBase
             {
                 LastOperation = result.Error?.Message ?? "Falha ao mapear leituras autenticadas.";
                 Recommendations = LastOperation;
+                AuthMessage = LastOperation;
+                AuthState = _authSession.State;
+                RaiseCanExecute();
                 return;
             }
 
@@ -564,6 +569,12 @@ public sealed class MainViewModel : ViewModelBase
             if (_authSession.Snapshot is { } snapshot)
             {
                 ApplySnapshot(snapshot);
+                if (snapshot.FirmwareCompatibility == FirmwareCompatibility.Unconfirmed)
+                {
+                    AuthMessage = FirmwareCompatibilityDisplay.AuthenticatedUnconfirmed;
+                    SessionPhase = "Sessão autenticada — firmware ainda não confirmada";
+                    return;
+                }
             }
 
             AuthMessage = map.PriorityMissing.Count == 0
@@ -666,12 +677,20 @@ public sealed class MainViewModel : ViewModelBase
             ? "Nenhuma tag inventariada."
             : string.Join(Environment.NewLine, snapshot.Inventory.Select(item =>
                 $"{item.Tag} · {item.Classification} · {(item.WasAccessed ? "acessada" : "não acessada")} · {item.ClassificationReason}"));
-        Recommendations = "Autenticado — somente leitura. "
+        Recommendations = snapshot.FirmwareCompatibility.ToAuthenticatedUiLabel() + ". "
                           + $"POST login: {snapshot.LoginPostCount}. "
                           + "POST configuração: 0. "
                           + "Páginas GET: "
                           + string.Join(", ", snapshot.PagesRead)
                           + ".";
+        if (snapshot.FirmwareCompatibility == FirmwareCompatibility.Unconfirmed)
+        {
+            StatusLabel = FirmwareCompatibilityDisplay.AuthenticatedUnconfirmed;
+        }
+        else if (snapshot.FirmwareCompatibility == FirmwareCompatibility.ConfirmedCompatible)
+        {
+            StatusLabel = FirmwareCompatibilityDisplay.AuthenticatedCompatible;
+        }
     }
 
     private static string FormatWan(WanProfile profile)

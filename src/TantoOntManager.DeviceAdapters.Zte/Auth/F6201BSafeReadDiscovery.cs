@@ -156,51 +156,11 @@ public static class F6201BSafeReadDiscovery
     private static IReadOnlyList<SafeReadInventoryItem> Prioritize(IReadOnlyList<SafeReadInventoryItem> items)
     {
         return items
-            .Select((item, index) => (item, index, rank: Rank(item)))
-            .OrderBy(tuple => tuple.rank)
+            .Select((item, index) => (item, index))
+            .OrderBy(tuple => F6201BFirmwareCompatibility.SafeReadOrder(tuple.item))
             .ThenBy(tuple => tuple.index)
             .Select(tuple => tuple.item)
             .ToList();
-    }
-
-    private static int Rank(SafeReadInventoryItem item)
-    {
-        if (item.Classification != SafeReadClassification.SafeRead)
-        {
-            return 80;
-        }
-
-        if (F6201BPriorityMenu.Match(item.MenuText) is not null)
-        {
-            return 0;
-        }
-
-        if (item.RouteKind == AuthenticatedRouteKind.MenuLeaf
-            || item.EvidenceSource.Contains("menuTreeJSON:page", StringComparison.OrdinalIgnoreCase)
-            || item.Tag.Equals("homePage", StringComparison.OrdinalIgnoreCase))
-        {
-            return 1;
-        }
-
-        if (item.RouteKind == AuthenticatedRouteKind.DataEndpoint
-            || item.EvidenceSource.Contains("MenuPage", StringComparison.OrdinalIgnoreCase))
-        {
-            return 2;
-        }
-
-        if (item.EvidenceSource.Contains("_type+_tag", StringComparison.OrdinalIgnoreCase)
-            || item.EvidenceSource.Contains("literalUrl", StringComparison.OrdinalIgnoreCase)
-            || item.EvidenceSource.Contains("concat:", StringComparison.OrdinalIgnoreCase))
-        {
-            return 3;
-        }
-
-        if (item.RouteKind == AuthenticatedRouteKind.HomepageShell)
-        {
-            return 5;
-        }
-
-        return 4;
     }
 
     private static SafeReadInventoryItem Classify(

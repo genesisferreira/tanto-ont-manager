@@ -533,7 +533,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
             {
                 Timeout = TimeSpan.FromSeconds(8)
             };
-            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.4.1 (lab-readonly)");
+            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.4.2 (lab-readonly)");
             _client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
             _httpClientInstanceId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_client);
             return _client;

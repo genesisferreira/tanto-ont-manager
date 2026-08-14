@@ -73,6 +73,9 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         transport.Gets.Should().NotContain(uri => uri.Contains("reboot"));
         store.Snapshot.Should().NotBeNull();
         store.Snapshot!.Identity.Firmware.SoftwareVersion.Should().Be("V9.3.10P8N1");
+        store.Snapshot.FirmwareCompatibility.Should().Be(FirmwareCompatibility.ConfirmedCompatible);
+        F6201BFirmwareCompatibility.AllowsWrite(store.Snapshot.FirmwareCompatibility).Should().BeFalse();
+        store.Snapshot.FirmwareCompatibility.ToAuthenticatedUiLabel().Should().Be("Autenticado — somente leitura");
         store.Snapshot.LoginPostCount.Should().Be(1);
         store.Snapshot.ConfigPostCount.Should().Be(0);
         store.Snapshot.LogoutPostCount.Should().Be(0);
@@ -156,6 +159,115 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         store.End("test");
         store.Transport.Should().BeNull();
         transport.HasSessionCookie.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Unknown_or_missing_firmware_stays_unconfirmed_and_keeps_readonly_session()
+    {
+        var transport = SuccessfulTransport();
+        transport.DeviceHtml = string.Empty;
+        transport.WanHtml = "<table><tr><td>Version</td><td>IPv4</td></tr><tr><td>Status</td><td>Connected</td></tr></table>";
+        var store = new FakeStore();
+        var logger = new ListLogger<ZteF6201BV9310P8N1AuthenticationAdapter>();
+        var adapter = new ZteF6201BV9310P8N1AuthenticationAdapter(new FakeFactory(transport), store, logger);
+        using var credentials = Creds("lab-user", "lab-pass");
+
+        var result = await adapter.AuthenticateAsync(_endpoint, Probe(), credentials, "abc123", CancellationToken.None);
+
+        result.Outcome.Should().Be(AuthenticationOutcome.Succeeded);
+        result.SessionState.Should().Be(AuthSessionState.AuthenticatedReadOnly);
+        result.Error.Should().BeNull();
+        store.Snapshot.Should().NotBeNull();
+        store.Snapshot!.FirmwareCompatibility.Should().Be(FirmwareCompatibility.Unconfirmed);
+        store.Snapshot.Identity.Firmware.SoftwareVersion.Should().BeNull();
+        store.Snapshot.FirmwareCompatibility.ToAuthenticatedUiLabel()
+            .Should().Be(FirmwareCompatibilityDisplay.AuthenticatedUnconfirmed);
+        F6201BFirmwareCompatibility.AllowsAuthenticationAndSafeRead(store.Snapshot.FirmwareCompatibility).Should().BeTrue();
+        F6201BFirmwareCompatibility.AllowsWrite(store.Snapshot.FirmwareCompatibility).Should().BeFalse();
+        transport.LoginPostCount.Should().Be(1);
+        transport.ConfigPostCount.Should().Be(0);
+        transport.Posts.Should().HaveCount(1);
+        transport.Posts[0].Should().Contain("login_entry");
+        transport.Gets.Should().NotBeEmpty();
+        transport.HttpMethodsUsed.Where(method => method == "POST").Should().HaveCount(1);
+        transport.HttpMethodsUsed.Should().Contain("GET");
+        store.Transport!.HasSessionCookie.Should().BeTrue();
+        transport.LastCleanupReason.Should().BeNull();
+        var logs = string.Join('\n', logger.Messages);
+        logs.Should().NotContain("lab-pass");
+        logs.Should().NotContain("lab-user");
+        logs.Should().NotContain("SID_HTTPS_");
+        logs.Should().NotContain("_sessionTOKEN");
+        logs.Should().NotContain("cafebabe");
+    }
+
+    [Fact]
+    public async Task Real_ont_regression_wan_version_without_device_page_is_not_incompatible()
+    {
+        var transport = SuccessfulTransport();
+        transport.AuthenticatedHtml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "zte-f6201b-v9310p8n1-login-contract.html"))
+            + "<script>var menuTreeJSON = [{\"id\":\"internet\",\"name\":\"Internet\",\"children\":[{\"id\":\"ethWanStatus\",\"name\":\"WAN\"}]}]; var _sessionTmpToken = \"tok2\";</script>";
+        transport.DeviceHtml = string.Empty;
+        transport.WanHtml = "<table><tr><td>Version</td><td>IPv4</td></tr><tr><td>Connection Status</td><td>Disconnected</td></tr></table>";
+        var store = new FakeStore();
+        var adapter = Create(transport, store);
+        using var credentials = Creds("lab-user", "lab-pass");
+
+        var result = await adapter.AuthenticateAsync(_endpoint, Probe(), credentials, "abc123", CancellationToken.None);
+
+        result.Outcome.Should().Be(AuthenticationOutcome.Succeeded);
+        result.SessionState.Should().Be(AuthSessionState.AuthenticatedReadOnly);
+        result.SessionState.Should().NotBe(AuthSessionState.ContractIncompatible);
+        store.Snapshot!.FirmwareCompatibility.Should().Be(FirmwareCompatibility.Unconfirmed);
+        store.Snapshot.Identity.Firmware.SoftwareVersion.Should().BeNull();
+        transport.LastCleanupReason.Should().BeNull();
+        store.Transport!.HasSessionCookie.Should().BeTrue();
+        transport.LoginPostCount.Should().Be(1);
+        transport.ConfigPostCount.Should().Be(0);
+        result.Error?.Message.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Normalized_homologated_firmware_is_confirmed_compatible()
+    {
+        var transport = SuccessfulTransport();
+        transport.DeviceHtml = "Hardware Version: V9.3.12 Software Version: v9.3.10 p8n1 Boot Version: V9.3.10P10N6";
+        var store = new FakeStore();
+        var adapter = Create(transport, store);
+        using var credentials = Creds("lab-user", "lab-pass");
+
+        var result = await adapter.AuthenticateAsync(_endpoint, Probe(), credentials, null, CancellationToken.None);
+
+        result.Outcome.Should().Be(AuthenticationOutcome.Succeeded);
+        store.Snapshot!.FirmwareCompatibility.Should().Be(FirmwareCompatibility.ConfirmedCompatible);
+        store.Transport!.HasSessionCookie.Should().BeTrue();
+        transport.ConfigPostCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Real_different_firmware_ends_session_as_incompatible()
+    {
+        var transport = SuccessfulTransport();
+        transport.DeviceHtml = "Hardware Version: V9.3.12 Software Version: V9.3.10P9N1 Boot Version: V9.3.10P10N6";
+        var store = new FakeStore();
+        var adapter = Create(transport, store);
+        using var credentials = Creds("lab-user", "lab-pass");
+
+        var result = await adapter.AuthenticateAsync(_endpoint, Probe(), credentials, "abc123", CancellationToken.None);
+
+        result.Outcome.Should().Be(AuthenticationOutcome.Failed);
+        result.SessionState.Should().Be(AuthSessionState.ContractIncompatible);
+        result.Error!.Code.Should().Be(ErrorCodes.ContractIncompatible);
+        result.Error.Message.Should().Contain("V9.3.10P9N1");
+        result.Error.Message.Should().NotContain("lab-pass");
+        result.Error.Message.Should().NotContain("cafebabe");
+        store.DomainSession.Should().BeNull();
+        store.Snapshot.Should().BeNull();
+        transport.HasSessionCookie.Should().BeFalse();
+        transport.LastCleanupReason.Should().NotBeNull();
+        transport.LoginPostCount.Should().Be(1);
+        transport.ConfigPostCount.Should().Be(0);
+        F6201BFirmwareCompatibility.AllowsWrite(FirmwareCompatibility.ConfirmedIncompatible).Should().BeFalse();
     }
 
     [Fact]
@@ -273,6 +385,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         public string PublicHtml { get; set; } = string.Empty;
         public string AuthenticatedHtml { get; set; } = string.Empty;
         public string DeviceHtml { get; set; } = string.Empty;
+        public string? WanHtml { get; set; }
         public string BootstrapJson { get; set; } = """{"sess_token":"tok","loginErrMsg":"","promptMsg":"","lockingTime":0}""";
         public string ChallengeXml { get; set; } = "<ajax_response_xml_root>cafebabe</ajax_response_xml_root>";
         public string PostBody { get; set; } = """{"login_need_refresh":true,"sess_token":"tok2","loginErrMsg":"","promptMsg":"","lockingTime":0}""";
@@ -318,7 +431,11 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
             {
                 body = ChallengeXml;
             }
-            else if (pathAndQuery.Contains("devinfo") || pathAndQuery.Contains("homePage") || pathAndQuery.Contains("pon") || pathAndQuery.Contains("wan"))
+            else if (pathAndQuery.Contains("wan"))
+            {
+                body = WanHtml ?? DeviceHtml;
+            }
+            else if (pathAndQuery.Contains("devinfo") || pathAndQuery.Contains("homePage") || pathAndQuery.Contains("pon"))
             {
                 body = DeviceHtml;
             }
@@ -386,5 +503,17 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
             var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(body))).ToLowerInvariant()[..8];
             return new(true, 200, body, "text/html", "https://192.168.100.1" + uri, 0, hash, TimeSpan.FromMilliseconds(5), null);
         }
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception));
     }
 }

@@ -243,13 +243,20 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                 ManufacturerNames.Zte,
                 DeviceModelIds.ZteF6201B,
                 device);
+            var compatibility = F6201BFirmwareCompatibility.Classify(identity);
+            _logger.LogInformation(
+                "Firmware compatibilidade={Compatibility} confirmada={Reliable}",
+                compatibility,
+                compatibility != FirmwareCompatibility.Unconfirmed);
 
-            if (!F6201BV9310P8N1AuthenticatedPageParser.FirmwareMatchesWhenPresent(identity))
+            if (compatibility == FirmwareCompatibility.ConfirmedIncompatible)
             {
                 return Fail(
                     AuthSessionState.ContractIncompatible,
                     ErrorCodes.ContractIncompatible,
-                    "A firmware lida não é a V9.3.10P8N1 homologada. A sessão foi encerrada.",
+                    "A firmware lida ("
+                    + F6201BFirmwareCompatibility.SanitizeForOperator(identity.Firmware.SoftwareVersion)
+                    + ") não é a V9.3.10P8N1 homologada. A sessão foi encerrada.",
                     started.Elapsed,
                     transport,
                     authenticatedHome);
@@ -271,7 +278,10 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                 evidence,
                 transport.LoginPostCount,
                 transport.LogoutPostCount,
-                transport.ConfigPostCount);
+                transport.ConfigPostCount)
+            {
+                FirmwareCompatibility = compatibility
+            };
 
             var session = AuthorizedDeviceSession.Authenticated(
                 endpoint,
