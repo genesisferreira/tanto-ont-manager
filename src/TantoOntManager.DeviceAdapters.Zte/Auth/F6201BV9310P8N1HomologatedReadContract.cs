@@ -67,7 +67,7 @@ public static class F6201BV9310P8N1HomologatedReadContract
         "menuData",
         "optical_info_lua.lua",
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-        ["ONU State", "Input Power", "Output Power", "Supply Voltage", "Transmitter Bias Current", "Temperature"],
+        ["ONU State", "Input Power", "Output Power", "Supply Voltage", "Transmitter Bias Current", "Temperature", "LOID", "GPON SN"],
         ["OBJ_PON_OPTICALPARA_ID"]);
 
     public static readonly HomologatedGetRoute WanStatusTemplate = new(

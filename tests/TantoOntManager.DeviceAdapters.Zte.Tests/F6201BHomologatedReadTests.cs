@@ -106,6 +106,7 @@ public sealed class F6201BHomologatedReadTests
         result.Wan.Profiles.Should().OnlyContain(profile => profile.PppoeUsername != "user@isp");
         string.Join('\n', result.Wan.Evidence.Select(item => item.Snippet + item.Value)).Should().NotContain("secret-lab");
         result.Device.SerialNumber.Should().Be("ZTEG00LAB001");
+        result.FieldReads.Should().Contain(item => item.Field == "GPON SN");
         SensitiveDataMaskerShouldHide(result);
         result.Traces.Should().NotContain(item => item.Outcome == "GenericXmlResponse");
         transport.Posts.Should().BeEmpty();
@@ -122,6 +123,85 @@ public sealed class F6201BHomologatedReadTests
         transport.HasSessionCookie.Should().BeTrue();
         typeof(F6201BHomologatedReadCoordinator).Assembly.GetReferencedAssemblies()
             .Should().NotContain(name => name.Name != null && name.Name.Contains("WebView2", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Lua_xml_with_encode_reads_real_device_and_pon_fields()
+    {
+        var device = F6201BV9310P8N1DeviceInformationParser.Parse((
+            "/?_type=menuData&_tag=devmgr_statusmgr_lua.lua",
+            Fixture("zte-f6201b-v9310p8n1-lua-device.xml")));
+        var pon = F6201BV9310P8N1PonParser.Parse(
+            ("/?_type=menuData&_tag=devmgr_statusmgr_lua.lua", Fixture("zte-f6201b-v9310p8n1-lua-device.xml")),
+            ("/?_type=menuData&_tag=optical_info_lua.lua", Fixture("zte-f6201b-v9310p8n1-lua-pon.xml")));
+        var wan = F6201BV9310P8N1WanParser.Parse(
+            ("/?_type=menuData&_tag=wan_internetstatus_lua.lua", Fixture("zte-f6201b-v9310p8n1-homologated-wan-status.xml")),
+            ("/?_type=menuData&_tag=wan_internet_lua.lua", Fixture("zte-f6201b-v9310p8n1-homologated-wan-config.xml")));
+
+        device.DeviceType.Should().Be("F6201B");
+        device.HardwareVersion.Should().Be("V9.3.12");
+        device.SoftwareVersion.Should().Be("V9.3.10P8N1");
+        device.BootVersion.Should().Be("V9.3.10P10N6");
+        device.SerialNumber.Should().Be("ZTEG00LAB001");
+        device.MacAddress.Should().Be("00:11:22:33:44:55");
+        device.SoftwareVersion.Should().NotBe("IPv4");
+        F6201BFirmwareCompatibility.Classify(device.SoftwareVersion).Should().Be(FirmwareCompatibility.ConfirmedCompatible);
+        F6201BFieldAssociation.IsExactSoftwareFirmwareField("SoftwareVer").Should().BeTrue();
+        F6201BFieldAssociation.IsExactSoftwareFirmwareField("IPVersion").Should().BeFalse();
+        F6201BFieldAssociation.IsExactSoftwareFirmwareField("Version").Should().BeFalse();
+
+        pon.OnuState.Should().Be("5");
+        pon.OnuState.Should().NotBe("O5");
+        pon.InputPower.Should().Be("-40");
+        pon.OutputPower.Should().Be("-40");
+        pon.Voltage.Should().Be("3205");
+        pon.BiasCurrent.Should().Be("12.4");
+        pon.Temperature.Should().Be("41");
+        pon.Voltage.Should().NotBe(pon.InputPower);
+        pon.BiasCurrent.Should().NotBe(pon.InputPower);
+        pon.Temperature.Should().NotBe(pon.InputPower);
+        pon.InputPower.Should().NotBe("99999");
+        pon.OutputPower.Should().NotBe("88888");
+        pon.Loid.Should().Be("labloid001");
+        pon.GponSerial.Should().Be("ZTEGLABGPON01");
+        pon.GponSerial.Should().NotBe(device.SerialNumber);
+
+        wan.Profiles.Should().HaveCount(2);
+        wan.Profiles[0].Name.Should().Be("HSI_TR069");
+        wan.Profiles[1].Name.Should().Be("VOIP_IPTV");
+        wan.Profiles[0].VlanId.Should().Be(210);
+        wan.Profiles[1].VlanId.Should().Be(220);
+        wan.Profiles[0].VlanId.Should().NotBe(wan.Profiles[1].VlanId);
+        wan.Profiles[0].Ipv4Address.Should().NotBe(wan.Profiles[1].Ipv4Address);
+        wan.Profiles[0].MacAddress.Should().NotBe(wan.Profiles[1].MacAddress);
+        wan.Profiles.Should().OnlyContain(profile => profile.PppoeUsername != "user@isp");
+        string.Join('\n', wan.Evidence.Select(item => item.Snippet + item.Value)).Should().NotContain("secret-lab");
+        TantoOntManager.Domain.Audit.SensitiveDataMasker.MaskSerial(device.SerialNumber).Should().NotBe("ZTEG00LAB001");
+        TantoOntManager.Domain.Audit.SensitiveDataMasker.MaskMac(device.MacAddress).Should().NotContain("11:22");
+        TantoOntManager.Domain.Audit.SensitiveDataMasker.MaskUsername(pon.Loid).Should().NotBe("labloid001");
+        TantoOntManager.Domain.Audit.SensitiveDataMasker.MaskSerial(pon.GponSerial).Should().NotBe("ZTEGLABGPON01");
+    }
+
+    [Fact]
+    public async Task Lua_xml_coordinator_keeps_raw_optical_values_and_zero_config_posts()
+    {
+        var transport = new HomologatedTransport { UseLuaXml = true };
+        var result = await F6201BHomologatedReadCoordinator.ReadAsync(transport, CancellationToken.None);
+
+        result.FirmwareCompatibility.Should().Be(FirmwareCompatibility.ConfirmedCompatible);
+        result.Device.SoftwareVersion.Should().Be("V9.3.10P8N1");
+        result.Pon.InputPower.Should().Be("-40");
+        result.Pon.OutputPower.Should().Be("-40");
+        result.Pon.OnuState.Should().Be("5");
+        result.FieldReads.Single(item => item.Field == "Input Power").SanitizedValue.Should().Be("-40");
+        result.FieldReads.Single(item => item.Field == "Output Power").SanitizedValue.Should().Be("-40");
+        result.FieldReads.Single(item => item.Field == "Software Version").SanitizedValue.Should().Be("V9.3.10P8N1");
+        result.FieldReads.Single(item => item.Field == "GPON SN").SanitizedValue.Should().NotBe("ZTEGLABGPON01");
+        result.Wan.Profiles.Should().HaveCount(2);
+        transport.ConfigPostCount.Should().Be(0);
+        transport.Posts.Should().BeEmpty();
+        result.Traces.Should().NotContain(item => item.Outcome == "GenericXmlResponse");
+        string.Join('\n', result.FieldReads.Select(item => item.SanitizedValue)).Should().NotContain("secret-lab");
     }
 
     [Fact]
@@ -280,6 +360,7 @@ public sealed class F6201BHomologatedReadTests
         public bool FailPon { get; set; }
         public bool IncompatibleFirmware { get; set; }
         public bool GenericXml { get; set; }
+        public bool UseLuaXml { get; set; }
         public List<string> Gets { get; } = [];
         public List<string> Posts { get; } = [];
         public IPAddress BoundAddress { get; } = IPAddress.Parse("192.168.100.1");
@@ -322,7 +403,9 @@ public sealed class F6201BHomologatedReadTests
             }
             else if (pathAndQuery.Contains("devmgr_statusmgr", StringComparison.OrdinalIgnoreCase))
             {
-                body = Fixture("zte-f6201b-v9310p8n1-homologated-device.xml");
+                body = Fixture(UseLuaXml
+                    ? "zte-f6201b-v9310p8n1-lua-device.xml"
+                    : "zte-f6201b-v9310p8n1-homologated-device.xml");
                 if (IncompatibleFirmware)
                 {
                     body = body.Replace("V9.3.10P8N1", "V9.3.10P9N1");
@@ -330,7 +413,9 @@ public sealed class F6201BHomologatedReadTests
             }
             else if (pathAndQuery.Contains("optical_info", StringComparison.OrdinalIgnoreCase))
             {
-                body = Fixture("zte-f6201b-v9310p8n1-homologated-pon.xml");
+                body = Fixture(UseLuaXml
+                    ? "zte-f6201b-v9310p8n1-lua-pon.xml"
+                    : "zte-f6201b-v9310p8n1-homologated-pon.xml");
             }
             else if (pathAndQuery.Contains("wan_internetstatus", StringComparison.OrdinalIgnoreCase))
             {

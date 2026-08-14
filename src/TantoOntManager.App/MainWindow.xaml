@@ -179,7 +179,7 @@
               </StackPanel>
               <StackPanel Margin="0,0,0,12">
                 <TextBlock Text="Software Version" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding Firmware}" />
+                <TextBlock Text="{Binding Firmware}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,16,12">
                 <TextBlock Text="Boot Version" Foreground="{StaticResource MutedBrush}" FontSize="11" />
@@ -187,11 +187,11 @@
               </StackPanel>
               <StackPanel Margin="0,0,0,12">
                 <TextBlock Text="Serial (mascarado)" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding Serial}" />
+                <TextBlock Text="{Binding Serial}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,16,12">
                 <TextBlock Text="MAC (mascarado)" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding Mac}" />
+                <TextBlock Text="{Binding Mac}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,0,12">
                 <TextBlock Text="Título público" Foreground="{StaticResource MutedBrush}" FontSize="11" />
@@ -206,39 +206,35 @@
             <UniformGrid Columns="2">
               <StackPanel Margin="0,0,16,12">
                 <TextBlock Text="ONU State" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding Pon}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Pon}" FontWeight="SemiBold" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,0,12">
                 <TextBlock Text="Temperature" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding Temperature}" />
+                <TextBlock Text="{Binding Temperature}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,16,12">
                 <TextBlock Text="Input Power" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding InputPower}" />
+                <TextBlock Text="{Binding InputPower}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,0,12">
                 <TextBlock Text="Output Power" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding OutputPower}" />
+                <TextBlock Text="{Binding OutputPower}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,16,12">
-                <TextBlock Text="Potência óptica" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding OpticalPower}" />
-              </StackPanel>
-              <StackPanel Margin="0,0,0,12">
                 <TextBlock Text="Supply Voltage" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding Voltage}" />
-              </StackPanel>
-              <StackPanel Margin="0,0,16,12">
-                <TextBlock Text="Transmitter Bias Current" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding BiasCurrent}" />
+                <TextBlock Text="{Binding Voltage}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,0,12">
-                <TextBlock Text="LOID" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding Loid}" />
+                <TextBlock Text="Transmitter Bias Current" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding BiasCurrent}" TextWrapping="Wrap" />
               </StackPanel>
               <StackPanel Margin="0,0,16,12">
+                <TextBlock Text="LOID" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding Loid}" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Margin="0,0,0,12">
                 <TextBlock Text="GPON SN (mascarado)" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-                <TextBlock Text="{Binding GponSerial}" />
+                <TextBlock Text="{Binding GponSerial}" TextWrapping="Wrap" />
               </StackPanel>
             </UniformGrid>
           </ScrollViewer>

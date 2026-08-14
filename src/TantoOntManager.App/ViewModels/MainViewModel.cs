@@ -420,7 +420,9 @@ public sealed class MainViewModel : ViewModelBase
             {
                 Pon = diagnostics.Pon.OnuState ?? diagnostics.Pon.Description ?? "—";
                 Temperature = diagnostics.Optical.Temperature ?? "Não disponível na interface pública";
-                OpticalPower = FormatOptical(diagnostics.Optical, false);
+                InputPower = ScalarOrNull(diagnostics.Optical.RxPower) ?? "Não disponível na interface pública";
+                OutputPower = ScalarOrNull(diagnostics.Optical.TxPower) ?? "Não disponível na interface pública";
+                OpticalPower = "—";
                 WanProfiles = diagnostics.WanProfiles.Count == 0
                     ? diagnostics.AvailabilityNote
                     : string.Join(Environment.NewLine, diagnostics.WanProfiles.Select(profile => profile.Summary));
@@ -709,10 +711,8 @@ public sealed class MainViewModel : ViewModelBase
         InputPower = DisplayField(snapshot, "Input Power", snapshot.Diagnostics.Optical.RxPower);
         OutputPower = DisplayField(snapshot, "Output Power", snapshot.Diagnostics.Optical.TxPower);
         Loid = DisplayField(snapshot, "LOID", snapshot.Diagnostics.Pon.Loid is null ? null : SensitiveDataMasker.MaskUsername(snapshot.Diagnostics.Pon.Loid));
-        GponSerial = snapshot.Diagnostics.Pon.GponSerial is null
-            ? FirmwareInfo.AuthenticatedMissing
-            : SensitiveDataMasker.MaskSerial(snapshot.Diagnostics.Pon.GponSerial);
-        OpticalPower = $"Tx {OutputPower} / Rx {InputPower}";
+        GponSerial = DisplayField(snapshot, "GPON SN", snapshot.Diagnostics.Pon.GponSerial is null ? null : SensitiveDataMasker.MaskSerial(snapshot.Diagnostics.Pon.GponSerial));
+        OpticalPower = "—";
         WanProfiles = snapshot.Diagnostics.WanProfiles.Count == 0
             ? DisplayField(snapshot, "WAN profiles", null)
             : string.Join(Environment.NewLine + Environment.NewLine, snapshot.Diagnostics.WanProfiles.Select(FormatWan));
@@ -778,18 +778,6 @@ public sealed class MainViewModel : ViewModelBase
             profile.MacAddress is null ? null : "MAC: " + profile.MacAddress,
             profile.PppoeUsername is null ? null : "PPPoE user: " + profile.PppoeUsername
         }.Where(part => !string.IsNullOrWhiteSpace(part)));
-
-    private static string FormatOptical(OpticalReading optical, bool authenticated)
-    {
-        var tx = ScalarOrNull(optical.TxPower);
-        var rx = ScalarOrNull(optical.RxPower);
-        if (tx is null && rx is null)
-        {
-            return authenticated ? FirmwareInfo.AuthenticatedMissing : FirmwareInfo.PublicMissing;
-        }
-
-        return $"Tx {tx ?? "—"} / Rx {rx ?? "—"}";
-    }
 
     private static string? ScalarOrNull(string? value)
     {

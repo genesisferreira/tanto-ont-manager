@@ -47,27 +47,43 @@ public static class F6201BV9310P8N1DeviceInformationParser
         }
 
         var evidence = new List<FieldEvidence>();
-        string? ReadExact(params string[] keys)
+        string? ReadExact(string[] xmlObjects, params string[] keys)
         {
             foreach (var page in source)
             {
-                var parsed = F6201BLabeledValueReader.ReadExact(page.Page, page.Body, keys);
-                if (parsed.Found && F6201BFieldAssociation.IsUsableScalar(parsed.Value))
+                if (xmlObjects.Length > 0
+                    && page.Body.IndexOf("ParaName", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    evidence.Add(parsed.Evidence!);
-                    return parsed.Value;
+                    foreach (var xmlObject in xmlObjects)
+                    {
+                        var parsed = F6201BLabeledValueReader.ReadExactFromObject(page.Page, page.Body, xmlObject, keys);
+                        if (parsed.Found)
+                        {
+                            evidence.Add(parsed.Evidence!);
+                            return parsed.Value;
+                        }
+                    }
+
+                    continue;
+                }
+
+                var fallback = F6201BLabeledValueReader.ReadExact(page.Page, page.Body, keys);
+                if (fallback.Found && F6201BFieldAssociation.IsUsableScalar(fallback.Value))
+                {
+                    evidence.Add(fallback.Evidence!);
+                    return fallback.Value;
                 }
             }
 
             return null;
         }
 
-        var deviceType = ReadExact("Device Type", "DeviceType", "ModelName", "Model Name", "Frm_ModelName");
-        var hardware = ReadExact("Hardware Version", "HardwareVersion", "HardwareVer", "HwVer", "Frm_HardwareVer", "HWVer");
-        var software = ReadExact("Software Version", "SoftwareVersion", "Firmware Version", "FirmwareVersion");
-        var boot = ReadExact("Boot Version", "BootVersion", "BootVer", "Frm_BootVer");
-        var serial = ReadExact("Serial Number", "SerialNum", "SerialNumber", "Frm_SerialNumber", "GPON SN", "GPONSN");
-        var mac = ReadExact("MAC Address", "MacAddr", "MACAddress", "Frm_MACAddress");
+        var deviceType = ReadExact(F6201BV9310P8N1XmlFieldAliases.DeviceObjects, F6201BV9310P8N1XmlFieldAliases.DeviceType);
+        var hardware = ReadExact(F6201BV9310P8N1XmlFieldAliases.DeviceObjects, F6201BV9310P8N1XmlFieldAliases.HardwareVersion);
+        var software = ReadExact(F6201BV9310P8N1XmlFieldAliases.DeviceObjects, F6201BV9310P8N1XmlFieldAliases.SoftwareVersion);
+        var boot = ReadExact(F6201BV9310P8N1XmlFieldAliases.DeviceObjects, F6201BV9310P8N1XmlFieldAliases.BootVersion);
+        var serial = ReadExact(F6201BV9310P8N1XmlFieldAliases.DeviceObjects, F6201BV9310P8N1XmlFieldAliases.SerialNumber);
+        var mac = ReadExact(F6201BV9310P8N1XmlFieldAliases.DeviceObjects, F6201BV9310P8N1XmlFieldAliases.DeviceMac);
 
         var found = new[] { deviceType, hardware, software, boot, serial, mac }.Count(value => !string.IsNullOrWhiteSpace(value));
         return new F6201BParsedDeviceInformation(
@@ -88,29 +104,61 @@ public static class F6201BV9310P8N1PonParser
     {
         var source = pages.Where(page => LooksLikePonPage(page.Page, page.Body)).ToArray();
         var evidence = new List<FieldEvidence>();
-        string? ReadExact(params string[] keys)
+        string? ReadExact(string[] xmlObjects, params string[] keys)
         {
             foreach (var page in source)
             {
-                var parsed = F6201BLabeledValueReader.ReadExact(page.Page, page.Body, keys);
-                if (parsed.Found && F6201BFieldAssociation.IsUsableScalar(parsed.Value))
+                if (xmlObjects.Length > 0
+                    && page.Body.IndexOf("ParaName", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    evidence.Add(parsed.Evidence!);
-                    return parsed.Value;
+                    foreach (var xmlObject in xmlObjects)
+                    {
+                        var parsed = F6201BLabeledValueReader.ReadExactFromObject(page.Page, page.Body, xmlObject, keys);
+                        if (parsed.Found)
+                        {
+                            evidence.Add(parsed.Evidence!);
+                            return parsed.Value;
+                        }
+                    }
+
+                    continue;
+                }
+
+                var fallback = F6201BLabeledValueReader.ReadExact(page.Page, page.Body, keys);
+                if (fallback.Found && F6201BFieldAssociation.IsUsableScalar(fallback.Value))
+                {
+                    evidence.Add(fallback.Evidence!);
+                    return fallback.Value;
                 }
             }
 
             return null;
         }
 
-        var onu = ReadExact("ONU State", "OnuState", "PonState", "PON Status", "Frm_PonState", "ONUState");
-        var temperature = ReadExact("Temperature", "Frm_Temperature", "OptTemperature", "OpticTemperature");
-        var input = ReadExact("Optical Module Input Power", "RxPower", "Frm_RxPower", "OpticalRx", "InputPower", "RX optical power");
-        var output = ReadExact("Optical Module Output Power", "TxPower", "Frm_TxPower", "OpticalTx", "OutputPower", "TX optical power");
-        var voltage = ReadExact("Supply Voltage", "Frm_Voltage", "SupplyVoltage");
-        var bias = ReadExact("Transmitter Bias Current", "BiasCurrent", "Frm_Bias", "TxBias");
-        var loid = ReadExact("LOID", "Loid", "PonLoid", "Frm_LOID");
-        var gponSn = ReadExact("GPON SN", "GPONSN", "PonSN", "SerialNumber", "Frm_PonSN");
+        var onu = ReadExact(
+            F6201BV9310P8N1XmlFieldAliases.OnuStateObjects,
+            F6201BV9310P8N1XmlFieldAliases.OnuStateInRegistrationObject);
+        var temperature = ReadExact(
+            F6201BV9310P8N1XmlFieldAliases.OpticalObjects,
+            F6201BV9310P8N1XmlFieldAliases.Temperature);
+        var input = ReadExact(
+            F6201BV9310P8N1XmlFieldAliases.OpticalObjects,
+            F6201BV9310P8N1XmlFieldAliases.InputPower);
+        var output = ReadExact(
+            F6201BV9310P8N1XmlFieldAliases.OpticalObjects,
+            F6201BV9310P8N1XmlFieldAliases.OutputPower);
+        var voltage = ReadExact(
+            F6201BV9310P8N1XmlFieldAliases.OpticalObjects,
+            F6201BV9310P8N1XmlFieldAliases.Voltage);
+        var bias = ReadExact(
+            F6201BV9310P8N1XmlFieldAliases.OpticalObjects,
+            F6201BV9310P8N1XmlFieldAliases.Bias);
+        var loid = ReadExact(
+            F6201BV9310P8N1XmlFieldAliases.LoidObjects,
+            F6201BV9310P8N1XmlFieldAliases.Loid);
+        var gponSn = ReadExact(
+            F6201BV9310P8N1XmlFieldAliases.GponSnObjects,
+            F6201BV9310P8N1XmlFieldAliases.GponSn);
 
         var found = new[] { onu, temperature, input, output, voltage, bias, loid, gponSn }.Count(value => !string.IsNullOrWhiteSpace(value));
         return new F6201BParsedPonStatus(
@@ -139,7 +187,11 @@ public static class F6201BV9310P8N1PonParser
                || compact.Contains("FRMPONSTATE")
                || compact.Contains("OPTICALMODULEINPUTPOWER")
                || compact.Contains("FRMRXPOWER")
-               || compact.Contains("PONLOID");
+               || compact.Contains("PONLOID")
+               || compact.Contains("OBJGPONREGSTATUSID")
+               || compact.Contains("OBJPONOPTICALPARAID")
+               || compact.Contains("OBJUPLINKCONFID")
+               || compact.Contains("OBJSNINFOID");
     }
 }
 
@@ -360,7 +412,7 @@ public static class F6201BV9310P8N1WanParser
         {
             foreach (var pair in obj)
             {
-                if (pair.Key.Equals(key, StringComparison.OrdinalIgnoreCase)
+                if (F6201BFieldAssociation.NamesEqual(pair.Key, key)
                     && !F6201BLabeledValueReader.IsPasswordKey(pair.Key)
                     && !string.IsNullOrWhiteSpace(pair.Value))
                 {

@@ -17,7 +17,8 @@ public static class F6201BFieldAssociation
         => expected.Any(candidate => NamesEqual(actual, candidate));
 
     public static bool IsExactSoftwareFirmwareField(string? name)
-        => MatchesAny(name, "Software Version", "SoftwareVersion", "Firmware Version", "FirmwareVersion");
+        => MatchesAny(name, F6201BV9310P8N1XmlFieldAliases.SoftwareVersion)
+           && !MatchesAny(name, "Version", "IPVersion", "IpVersion", "IPv4 Type", "Hardware Version", "HardwareVer", "Boot Version", "BootVer");
 
     public static bool IsUsableScalar(string? value)
     {

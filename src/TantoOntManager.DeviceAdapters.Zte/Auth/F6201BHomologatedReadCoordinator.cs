@@ -231,25 +231,22 @@ public static class F6201BHomologatedReadCoordinator
         var found = new List<string>();
         foreach (var field in route.ExpectedFields)
         {
-            var parsed = F6201BLabeledValueReader.ReadExact(route.LogicalEndpoint, body, field);
+            var aliases = F6201BV9310P8N1XmlFieldAliases.ForUiField(field);
+            var parsed = F6201BLabeledValueReader.ReadExact(route.LogicalEndpoint, body, aliases);
             if (parsed.Found)
             {
                 found.Add(field);
+                continue;
             }
-        }
 
-        foreach (var obj in F6201BLabeledValueReader.ReadXmlInstances(body))
-        {
-            foreach (var field in route.ExpectedFields)
+            foreach (var obj in F6201BLabeledValueReader.ReadXmlInstances(body))
             {
-                if (found.Contains(field, StringComparer.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (obj.Keys.Any(key => F6201BFieldAssociation.NamesEqual(key, field) && !F6201BLabeledValueReader.IsPasswordKey(key)))
+                if (obj.Keys.Any(key =>
+                        F6201BV9310P8N1XmlFieldAliases.KeyMatchesUiField(key, field)
+                        && !F6201BLabeledValueReader.IsPasswordKey(key)))
                 {
                     found.Add(field);
+                    break;
                 }
             }
         }
@@ -286,7 +283,8 @@ public static class F6201BHomologatedReadCoordinator
             Field("Supply Voltage", pon.Voltage, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
             Field("Transmitter Bias Current", pon.BiasCurrent, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
             Field("Temperature", pon.Temperature, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
-            Field("LOID", pon.Loid, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), SensitiveDataMasker.MaskUsername)
+            Field("LOID", pon.Loid, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), SensitiveDataMasker.MaskUsername),
+            Field("GPON SN", pon.GponSerial, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), SensitiveDataMasker.MaskSerial)
         };
 
         if (wan.Profiles.Count == 0)

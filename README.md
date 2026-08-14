@@ -2,12 +2,12 @@
 
 Ferramenta interna da **Tanto Telecom** para identificação, diagnóstico e, no futuro, padronização de ONTs conectadas ao computador por cabo de rede.
 
-A Fase 1 é **somente leitura**. A versão `0.1.7.1-lab` lê automaticamente Device, PON, WAN Status e WAN Config da F6201B V9.3.10P8N1 após o login homologado, usando somente GETs observados (`menuView` imediatamente antes de `menuData`). Não altera WAN, PPPoE, VLAN, firmware nem a placa Ethernet.
+A Fase 1 é **somente leitura**. A versão `0.1.7.2-lab` lê automaticamente Device, PON, WAN Status e WAN Config da F6201B V9.3.10P8N1 após o login homologado, usando somente GETs observados (`menuView` imediatamente antes de `menuData`) e aliases XML lua desta firmware. Não altera WAN, PPPoE, VLAN, firmware nem a placa Ethernet.
 
 ## Status da Fase 1
 
 - Modo de operação: `Laboratório — somente leitura`
-- Versão: `0.1.7.1-lab`
+- Versão: `0.1.7.2-lab`
 - Processamento: uma ONT por vez
 - Modelos iniciais previstos: ZTE ZXHN F6201B, F6600P, F670L
 - Detector público: F6201B por pontuação de evidências (título, Welcome to F6201B, ZTE Corporation, rodapé)

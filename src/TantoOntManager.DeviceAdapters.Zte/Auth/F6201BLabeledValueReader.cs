@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using TantoOntManager.Domain.Discovery;
 
 namespace TantoOntManager.DeviceAdapters.Zte.Auth;
@@ -109,6 +110,9 @@ public static class F6201BLabeledValueReader
         => PasswordKeys.Any(secret => key.Contains(secret, StringComparison.OrdinalIgnoreCase));
 
     public static IReadOnlyList<IReadOnlyDictionary<string, string>> ReadXmlInstances(string xml)
+        => ReadXmlInstances(xml, null);
+
+    public static IReadOnlyList<IReadOnlyDictionary<string, string>> ReadXmlInstances(string xml, string? objectLocalName)
     {
         var result = new List<IReadOnlyDictionary<string, string>>();
         if (string.IsNullOrWhiteSpace(xml) || xml.IndexOf("ParaName", StringComparison.OrdinalIgnoreCase) < 0)
@@ -117,35 +121,146 @@ public static class F6201BLabeledValueReader
         }
 
         var decoded = F6201BHtmlText.Decode(xml);
-        foreach (Match instance in Regex.Matches(decoded, "(?is)<Instance>(.*?)</Instance>"))
+        if (TryReadXmlInstances(decoded, objectLocalName, result))
         {
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (Match pair in Regex.Matches(
-                         instance.Groups[1].Value,
-                         "(?is)<ParaName>\\s*([^<]+?)\\s*</ParaName>\\s*<ParaValue>\\s*([^<]*?)\\s*</ParaValue>"))
-            {
-                var name = F6201BHtmlText.Normalize(pair.Groups[1].Value);
-                var value = F6201BHtmlText.Normalize(pair.Groups[2].Value);
-                if (string.IsNullOrWhiteSpace(name) || IsPasswordKey(name))
-                {
-                    continue;
-                }
-
-                map[name] = value;
-            }
-
-            if (map.Count > 0)
-            {
-                result.Add(map);
-            }
+            return result;
         }
 
+        ReadXmlInstancesByRegex(decoded, objectLocalName, result);
         return result;
+    }
+
+    private static bool TryReadXmlInstances(
+        string xml,
+        string? objectLocalName,
+        List<IReadOnlyDictionary<string, string>> sink)
+    {
+        try
+        {
+            var document = XDocument.Parse(xml, LoadOptions.None);
+            var instances = InstancesOf(document, objectLocalName);
+            foreach (var instance in instances)
+            {
+                AddIfNotEmpty(sink, CollectParaMap(instance));
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void ReadXmlInstancesByRegex(
+        string xml,
+        string? objectLocalName,
+        List<IReadOnlyDictionary<string, string>> sink)
+    {
+        var scopes = string.IsNullOrWhiteSpace(objectLocalName)
+            ? [xml]
+            : Regex.Matches(xml, "(?is)<" + Regex.Escape(objectLocalName) + "\\b[^>]*>(.*?)</" + Regex.Escape(objectLocalName) + ">")
+                .Select(match => match.Groups[1].Value)
+                .ToArray();
+
+        foreach (var scope in scopes)
+        {
+            foreach (Match instance in Regex.Matches(scope, "(?is)<Instance>(.*?)</Instance>"))
+            {
+                AddIfNotEmpty(sink, CollectParaMapFromInnerXml(instance.Groups[1].Value));
+            }
+        }
+    }
+
+    private static IEnumerable<XElement> InstancesOf(XDocument document, string? objectLocalName)
+    {
+        if (document.Root is null)
+        {
+            return [];
+        }
+
+        var roots = string.IsNullOrWhiteSpace(objectLocalName)
+            ? [document.Root]
+            : document.Descendants().Where(node =>
+                node.Name.LocalName.Equals(objectLocalName, StringComparison.OrdinalIgnoreCase));
+
+        return roots.SelectMany(root =>
+            root.Descendants().Where(node => node.Name.LocalName.Equals("Instance", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static Dictionary<string, string> CollectParaMap(XElement instance)
+    {
+        var names = instance.Elements()
+            .Where(node => node.Name.LocalName.Equals("ParaName", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var values = instance.Elements()
+            .Where(node => node.Name.LocalName.Equals("ParaValue", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return ZipParaMap(names.Select(node => node.Value), values.Select(node => node.Value));
+    }
+
+    private static Dictionary<string, string> CollectParaMapFromInnerXml(string innerXml)
+    {
+        var names = Regex.Matches(innerXml, "(?is)<ParaName>\\s*([^<]+?)\\s*</ParaName>")
+            .Select(match => match.Groups[1].Value)
+            .ToList();
+        var values = Regex.Matches(innerXml, "(?is)<ParaValue>(.*?)</ParaValue>")
+            .Select(match => match.Groups[1].Value)
+            .ToList();
+        return ZipParaMap(names, values);
+    }
+
+    private static Dictionary<string, string> ZipParaMap(IEnumerable<string> names, IEnumerable<string> values)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (nameRaw, valueRaw) in names.Zip(values))
+        {
+            var name = F6201BHtmlText.Normalize(nameRaw);
+            var value = UnwrapParaValue(valueRaw);
+            if (string.IsNullOrWhiteSpace(name) || IsPasswordKey(name) || !F6201BFieldAssociation.IsUsableScalar(value))
+            {
+                continue;
+            }
+
+            map[name] = value;
+        }
+
+        return map;
+    }
+
+    private static string UnwrapParaValue(string raw)
+    {
+        var text = raw ?? string.Empty;
+        text = Regex.Replace(text, "(?is)<!\\[CDATA\\[(.*?)\\]\\]>", "$1");
+        text = Regex.Replace(text, "(?is)</?encode\\b[^>]*>", string.Empty);
+        text = Regex.Replace(text, "(?is)<[^>]+>", string.Empty);
+        return F6201BHtmlText.Normalize(text);
+    }
+
+    private static void AddIfNotEmpty(
+        List<IReadOnlyDictionary<string, string>> sink,
+        Dictionary<string, string> map)
+    {
+        if (map.Count > 0)
+        {
+            sink.Add(map);
+        }
     }
 
     private static ParsedField? ReadXmlParaExact(string pageName, string xml, string[] labelsAndKeys)
     {
-        foreach (var obj in ReadXmlInstances(xml))
+        return MatchXmlKeys(pageName, F6201BLabeledValueReader.ReadXmlInstances(xml), labelsAndKeys);
+    }
+
+    public static ParsedField ReadExactFromObject(string pageName, string xml, string objectLocalName, params string[] labelsAndKeys)
+        => MatchXmlKeys(pageName, ReadXmlInstances(xml, objectLocalName), labelsAndKeys) ?? ParsedField.Missing;
+
+    private static ParsedField? MatchXmlKeys(
+        string pageName,
+        IReadOnlyList<IReadOnlyDictionary<string, string>> objects,
+        string[] labelsAndKeys)
+    {
+        foreach (var obj in objects)
         {
             foreach (var key in labelsAndKeys)
             {
