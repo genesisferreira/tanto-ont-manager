@@ -59,12 +59,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPublicWebReader, HttpPublicWebReader>();
         services.AddSingleton<ZteDeviceAdapter>();
         services.AddSingleton<IOntDeviceAdapter>(sp => sp.GetRequiredService<ZteDeviceAdapter>());
-        services.AddSingleton<IOntAuthenticationAdapter>(sp => sp.GetRequiredService<ZteDeviceAdapter>());
+        services.AddSingleton<IBoundOntTransportFactory, BoundOntTransportFactory>();
+        services.AddSingleton<IOntAuthSessionStore, OntAuthSessionStore>();
+        services.AddSingleton<IOntAuthenticationAdapter, ZteF6201BV9310P8N1AuthenticationAdapter>();
         services.AddSingleton<IDetectOntUseCase, DetectOntUseCase>();
         services.AddSingleton<ITestConnectionUseCase, TestConnectionUseCase>();
         services.AddSingleton<IListEthernetAdaptersUseCase, ListEthernetAdaptersUseCase>();
         services.AddSingleton<IAuthenticateDeviceUseCase, AuthenticateDeviceUseCase>();
         services.AddSingleton<IExportPublicDiagnosticUseCase, ExportPublicDiagnosticUseCase>();
+        services.AddSingleton<IExportAuthenticatedDiagnosticUseCase, ExportAuthenticatedDiagnosticUseCase>();
         services.AddSingleton<IBatchProcessingOrchestrator, DisabledBatchProcessingOrchestrator>();
         services.AddSingleton<IBatchWorkOrderReader, UnsupportedBatchWorkOrderReader>();
         services.AddSingleton(paths);

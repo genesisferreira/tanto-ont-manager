@@ -48,6 +48,7 @@ public sealed class DetectOntUseCaseTests
         var useCase = new DetectOntUseCase(
             probe,
             Array.Empty<IOntDeviceAdapter>(),
+            Array.Empty<IOntAuthenticationAdapter>(),
             new FakeAudit(),
             new ProbeSessionSettings(),
             NullLogger<DetectOntUseCase>.Instance);
@@ -86,6 +87,7 @@ public sealed class DetectOntUseCaseTests
         var useCase = new DetectOntUseCase(
             probe,
             new[] { deviceAdapter },
+            Array.Empty<IOntAuthenticationAdapter>(),
             new FakeAudit(),
             new ProbeSessionSettings(),
             NullLogger<DetectOntUseCase>.Instance);
@@ -159,6 +161,7 @@ public sealed class AuthenticateDeviceUseCaseTests
             Array.Empty<IOntAuthenticationAdapter>(),
             store,
             new SilentAudit(),
+            new ProbeSessionSettings(),
             NullLogger<AuthenticateDeviceUseCase>.Instance);
 
         using var password = new System.Security.SecureString();

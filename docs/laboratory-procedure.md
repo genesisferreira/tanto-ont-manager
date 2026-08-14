@@ -36,14 +36,18 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 5. Clique em `Testar conexão` e depois em `Detectar ONT`.
 6. Confira confiança, evidências, status HTTPS e hash curto.
 7. Clique em `Exportar diagnóstico público` se precisar arquivar a página pública.
-8. O botão `Login` permanece desabilitado nesta fase.
+8. Clique em `Exportar diagnóstico público` se precisar arquivar a página pública.
+9. Se a F6201B foi identificada com confiança suficiente, informe a credencial da etiqueta e clique **uma vez** em `Login`.
+10. Após o login, use `Exportar diagnóstico autenticado` se precisar arquivar identidade/PON/WAN sanitizados.
+11. Clique em `Encerrar sessão` ao terminar. Nenhum POST de logout é enviado.
 
 ## Resultado esperado nesta fase
 
 - Resposta HTTPS do endereço testado (HTTP pode estar indisponível)
 - Identificação pública `ZTE ZXHN F6201B` com evidências suficientes
-- Hardware, firmware, boot, serial, MAC, PON, temperatura, potência e WAN como “não disponíveis na interface pública”
-- Login: `AuthenticationMethodNotMapped` (botão desabilitado)
+- Login homologado somente para firmware `V9.3.10P8N1`: um POST, cookies em memória
+- Hardware, firmware, boot, PON, temperatura, potência e nomes WAN lidos por GET após autenticação, quando presentes nas páginas allowlist
+- Serial e MAC mascarados na UI e na exportação
 
 ## Proibido no laboratório desta fase
 

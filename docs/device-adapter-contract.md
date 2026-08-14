@@ -11,7 +11,7 @@ Não existem `ExecuteCommand`, `RunScript` ou `PostRawRequest`.
 
 ## Autenticação
 
-`IOntAuthenticationAdapter` é separado. Na Fase 1, o adaptador ZTE retorna `AuthenticationMethodNotMapped` e `CanAttemptAuthentication` é `false`. Nenhuma credencial é transmitida.
+`IOntAuthenticationAdapter` é separado. A F6201B V9.3.10P8N1 usa `ZteF6201BV9310P8N1AuthenticationAdapter`. Outros modelos ZTE continuam `AuthenticationMethodNotMapped`.
 
 ## Escrita futura
 
@@ -37,4 +37,5 @@ Antes de implementar qualquer gravação:
 - Evidências: `ZTE Corporation`, `Welcome to F6201B`, `F6201B`, marca `ZTE`, título, rodapé `©2008-2025 ZTE Corporation`.
 - Segue redirects e frames públicos no mesmo IP, somente GET.
 - F6600P e F670L têm IDs preparados; conflito de modelos não identifica.
-- Gravação e login não estão mapeados.
+- Gravação e login genérico ZTE não estão mapeados.
+- Login específico: F6201B firmware `V9.3.10P8N1`, um POST em `/?_type=loginData&_tag=login_entry`.

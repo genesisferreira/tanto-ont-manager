@@ -10,7 +10,8 @@ Toda a Fase 1 opera em **somente leitura**. Funções de escrita estão desativa
 - Não há persistência em arquivo nesta fase.
 - A opção “Não persistir a credencial” é o comportamento real: a credencial é descartada da memória após a tentativa.
 - DPAPI está preparado para uma fase posterior; não é usado para gravar senhas agora.
-- O botão Login não envia a senha enquanto o método de autenticação não estiver mapeado.
+- O botão Login envia a credencial **uma vez** somente para a F6201B com contrato homologado.
+- Cookies ficam em `CookieContainer` na memória e são descartados ao encerrar a sessão, trocar o IP ou fechar o aplicativo.
 
 ## TLS
 

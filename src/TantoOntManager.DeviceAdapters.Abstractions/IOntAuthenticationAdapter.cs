@@ -5,8 +5,8 @@ using TantoOntManager.Domain.Sessions;
 namespace TantoOntManager.DeviceAdapters.Abstractions;
 
 /// <summary>
-/// Contrato separado da leitura. Não envia credenciais enquanto o método de login
-/// da firmware não estiver homologado.
+/// Contrato separado da leitura. Envia a credencial somente no endpoint
+/// homologado do adaptador específico, uma vez por clique em Login.
 /// </summary>
 public interface IOntAuthenticationAdapter
 {
@@ -18,5 +18,6 @@ public interface IOntAuthenticationAdapter
         OntEndpoint endpoint,
         AdapterProbeResult probe,
         DeviceCredentials credentials,
+        string? pinnedCertificateSha256,
         CancellationToken cancellationToken);
 }

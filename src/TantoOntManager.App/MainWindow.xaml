@@ -190,7 +190,12 @@
             <TextBlock Text="Senha" Foreground="{StaticResource MutedBrush}" />
             <PasswordBox x:Name="PasswordInput" PasswordChanged="OnPasswordChanged" Margin="0,4,0,8" IsEnabled="{Binding IsAuthenticationMapped}" />
             <CheckBox IsChecked="{Binding DoNotPersistCredential}" Content="Não persistir a credencial" Margin="0,0,0,8" IsEnabled="{Binding IsAuthenticationMapped}" />
-            <Button Content="Login" Command="{Binding LoginCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" IsEnabled="{Binding IsAuthenticationMapped}" />
+            <TextBlock Text="{Binding AuthStateLabel}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+              <Button Content="Login" Command="{Binding LoginCommand}" Margin="0,0,8,0" />
+              <Button Content="Encerrar sessão" Command="{Binding EndSessionCommand}" Style="{StaticResource SecondaryButton}" />
+            </StackPanel>
+            <Button Content="Exportar diagnóstico autenticado" Command="{Binding ExportAuthenticatedCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" />
             <TextBlock Text="{Binding AuthMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
           </StackPanel>
         </Border>

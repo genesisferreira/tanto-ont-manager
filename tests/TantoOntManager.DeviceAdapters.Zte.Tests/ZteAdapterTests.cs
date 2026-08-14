@@ -76,30 +76,6 @@ public sealed class ZteDeviceAdapterTests
     }
 
     [Fact]
-    public async Task Authentication_is_not_mapped_and_does_not_invent_endpoints()
-    {
-        var html = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "zte-f6201b-login.html"));
-        var adapter = new ZteDeviceAdapter(new FakeReader(html, "ZXHN F6201B"), NullLogger<ZteDeviceAdapter>.Instance);
-        var probe = AdapterProbeResult.Match(
-            ZteDeviceAdapter.Id,
-            ManufacturerNames.Zte,
-            DeviceModelIds.ZteF6201B,
-            0.9,
-            OntEndpoint.Https(IPAddress.Parse("192.168.100.1")),
-            [],
-            true,
-            true);
-
-        adapter.CanAttemptAuthentication(probe).Should().BeFalse();
-        using var password = new System.Security.SecureString();
-        password.AppendChar('x');
-        using var credentials = new DeviceCredentials("user", password.Copy(), false);
-        var auth = await adapter.AuthenticateAsync(probe.Endpoint, probe, credentials, CancellationToken.None);
-        auth.Outcome.Should().Be(AuthenticationOutcome.MethodNotMapped);
-        auth.Error!.Code.Should().Be(ErrorCodes.AuthenticationMethodNotMapped);
-    }
-
-    [Fact]
     public async Task Public_diagnostics_do_not_invent_wan_or_pon_values()
     {
         var html = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "zte-f6201b-login.html"));

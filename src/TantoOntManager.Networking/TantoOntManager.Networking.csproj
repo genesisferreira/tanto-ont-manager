@@ -11,5 +11,6 @@
     <ProjectReference Include="..\TantoOntManager.Security\TantoOntManager.Security.csproj" />
     <ProjectReference Include="..\TantoOntManager.Application\TantoOntManager.Application.csproj" />
     <ProjectReference Include="..\TantoOntManager.DeviceAdapters.Abstractions\TantoOntManager.DeviceAdapters.Abstractions.csproj" />
+    <ProjectReference Include="..\TantoOntManager.DeviceAdapters.Zte\TantoOntManager.DeviceAdapters.Zte.csproj" />
   </ItemGroup>
 </Project>

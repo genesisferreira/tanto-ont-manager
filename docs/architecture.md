@@ -22,14 +22,15 @@ App (WPF / MVVM)
 | `TantoOntManager.Domain` | Entidades, VOs, erros, estados, máscaras |
 | `TantoOntManager.Networking` | Ethernet, ping, HTTP/HTTPS, sem alterar a NIC |
 | `TantoOntManager.DeviceAdapters.Abstractions` | Contrato de probe/leitura |
-| `TantoOntManager.DeviceAdapters.Zte` | Detector público F6201B; estrutura para F6600P/F670L |
+| `TantoOntManager.DeviceAdapters.Zte` | Detector público F6201B e login versionado V9.3.10P8N1 |
 | `TantoOntManager.Security` | Certificado local, DPAPI, sanitização |
 | `TantoOntManager.Infrastructure` | Serilog, DI, auditoria |
 
 ## Regras da Fase 1
 
 - Uma ONT por vez, porque o IP padrão se repete.
-- Somente GET da raiz pública (`/` HTTP ou HTTPS).
+- Somente GET da raiz pública na detecção (`/` HTTP ou HTTPS).
+- Login da F6201B: um POST no endpoint observado; demais leituras GET na allowlist.
 - Sem métodos genéricos perigosos (`ExecuteCommand`, `PostRawRequest`).
 - Escrita futura exige adaptador homologado, backup oficial, validação, rollback, confirmação e auditoria.
 

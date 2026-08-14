@@ -4,7 +4,7 @@
 
 | Fabricante | Modelo | Status | Observação |
 |---|---|---|---|
-| ZTE | ZXHN F6201B | Detecção pública 0.1.1-lab | Homologado em laboratório: HTTPS `192.168.100.1`, título `F6201B`, texto `Welcome to F6201B`, `ZTE Corporation` |
+| ZTE | ZXHN F6201B | Detecção pública + login somente leitura 0.1.2-lab | HTTPS `192.168.100.1`; autenticação no endpoint observado; GET autenticado allowlist |
 | ZTE | ZXHN F6600P | Estrutura apenas | Sem detector específico |
 | ZTE | ZXHN F670L | Estrutura apenas | Sem detector específico |
 | Zyxel | PM5301-T7 | Futuro | Sem adaptador |
@@ -15,7 +15,7 @@
 - Software: `V9.3.10P8N1`
 - Boot: `V9.3.10P10N6`
 - Após reset, o preset voltou automaticamente
-- Perfis observados na UI autenticada do equipamento (ainda **não lidos pelo app**, porque exigem login não mapeado):
+- Perfis observados na UI autenticada (lidos somente após login autorizado, sem escrita):
   - `HSI_TR069` — INTERNET_TR069, VLAN 210
   - `VOIP_IPTV` — INTERNET_VoIP, VLAN 220
 - Sem PPPoE visível na conta atual

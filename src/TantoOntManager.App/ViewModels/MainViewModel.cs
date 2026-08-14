@@ -6,11 +6,14 @@ using System.Security;
 using System.Windows.Input;
 using TantoOntManager.Application.Contracts;
 using TantoOntManager.Application.UseCases;
+using TantoOntManager.DeviceAdapters.Abstractions;
+using TantoOntManager.Domain.Adapters;
 using TantoOntManager.Domain.Audit;
 using TantoOntManager.Domain.Common;
 using TantoOntManager.Domain.Detection;
 using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Network;
+using TantoOntManager.Domain.Sessions;
 using TantoOntManager.Infrastructure.DependencyInjection;
 
 namespace TantoOntManager.App.ViewModels;
@@ -25,6 +28,9 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IDetectOntUseCase _detectOnt;
     private readonly ITestConnectionUseCase _testConnection;
     private readonly IExportPublicDiagnosticUseCase _exportDiagnostic;
+    private readonly IExportAuthenticatedDiagnosticUseCase _exportAuthenticated;
+    private readonly IAuthenticateDeviceUseCase _authenticate;
+    private readonly IOntAuthSessionStore _authSession;
     private readonly LoggingPaths _loggingPaths;
     private CancellationTokenSource _cts = new();
 
@@ -39,6 +45,9 @@ public sealed class MainViewModel : ViewModelBase
     private string _lastDuration = "—";
     private string _statusLabel = ApplicationStatus.Disconnected.ToUiLabel();
     private ApplicationStatus _status = ApplicationStatus.Disconnected;
+    private AuthSessionState _authState = AuthSessionState.Unmapped;
+    private DetectionReport? _lastReport;
+    private AdapterProbeResult? _lastProbe;
     private string _manufacturer = "—";
     private string _model = "—";
     private string _hardware = "—";
@@ -52,7 +61,7 @@ public sealed class MainViewModel : ViewModelBase
     private string _wanProfiles = "—";
     private string _capabilities = "—";
     private string _recommendations = "Modo laboratório — somente leitura. Nenhuma alteração será enviada à ONT ou à placa de rede.";
-    private string _authMessage = "Login indisponível: o método de autenticação desta firmware ainda não foi mapeado (AuthenticationMethodNotMapped). Usuário e senha não são enviados.";
+    private string _authMessage = "Detecte a F6201B para habilitar o login homologado. A senha da etiqueta é informada manualmente e não é persistida.";
     private string _httpStatus = "—";
     private string _publicTitle = "—";
     private string _responseSize = "—";
@@ -68,12 +77,18 @@ public sealed class MainViewModel : ViewModelBase
         IDetectOntUseCase detectOnt,
         ITestConnectionUseCase testConnection,
         IExportPublicDiagnosticUseCase exportDiagnostic,
+        IExportAuthenticatedDiagnosticUseCase exportAuthenticated,
+        IAuthenticateDeviceUseCase authenticate,
+        IOntAuthSessionStore authSession,
         LoggingPaths loggingPaths)
     {
         _listAdapters = listAdapters;
         _detectOnt = detectOnt;
         _testConnection = testConnection;
         _exportDiagnostic = exportDiagnostic;
+        _exportAuthenticated = exportAuthenticated;
+        _authenticate = authenticate;
+        _authSession = authSession;
         _loggingPaths = loggingPaths;
 
         Adapters = new ObservableCollection<EthernetAdapterInfo>();
@@ -82,7 +97,9 @@ public sealed class MainViewModel : ViewModelBase
         TestConnectionCommand = new RelayCommand(TestConnectionAsync, () => !IsBusy);
         RefreshAdaptersCommand = new RelayCommand(LoadAdapters, () => !IsBusy);
         ExportCommand = new RelayCommand(ExportAsync, () => !IsBusy);
-        LoginCommand = new RelayCommand(static () => { }, () => false);
+        LoginCommand = new RelayCommand(LoginAsync, CanLogin);
+        EndSessionCommand = new RelayCommand(EndSession, () => !IsBusy && IsAuthenticated);
+        ExportAuthenticatedCommand = new RelayCommand(ExportAuthenticatedAsync, CanExportAuthenticated);
         LoadAdapters();
     }
 
@@ -95,14 +112,38 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand RefreshAdaptersCommand { get; }
     public ICommand ExportCommand { get; }
     public ICommand LoginCommand { get; }
+    public ICommand EndSessionCommand { get; }
+    public ICommand ExportAuthenticatedCommand { get; }
 
     public string ProductName => "Tanto ONT Manager";
     public string ModeLabel => OperationMode.LaboratoryReadOnly.ToUiLabel();
     public string VersionLabel => "v" + (Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.1.1-lab");
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? ProductInfo.Version);
 
     public string LogPath => _loggingPaths.CurrentHint;
-    public bool IsAuthenticationMapped => false;
+    public bool IsAuthenticationMapped => _lastProbe is not null
+                                          && string.Equals(_lastProbe.Model, DeviceModelIds.ZteF6201B, StringComparison.Ordinal)
+                                          && _lastProbe.Confidence >= 0.55
+                                          && _lastReport?.Capabilities?.AuthenticationMapped == true;
+
+    public bool IsAuthenticated => _authSession.DomainSession?.IsAuthenticated == true
+                                   && _authState == AuthSessionState.AuthenticatedReadOnly;
+
+    public AuthSessionState AuthState
+    {
+        get => _authState;
+        private set
+        {
+            if (SetProperty(ref _authState, value))
+            {
+                RaisePropertyChanged(nameof(AuthStateLabel));
+                RaisePropertyChanged(nameof(IsAuthenticated));
+                RaiseCanExecute();
+            }
+        }
+    }
+
+    public string AuthStateLabel => AuthState.ToUiLabel();
 
     public EthernetAdapterInfo? SelectedAdapter
     {
@@ -124,8 +165,10 @@ public sealed class MainViewModel : ViewModelBase
         {
             if (SetProperty(ref _selectedKnownIp, value))
             {
+                EndSessionIfBoundToDifferentIp();
                 RaisePropertyChanged(nameof(IsCustomIp));
                 RaisePropertyChanged(nameof(ExpectedOntIp));
+                RaiseCanExecute();
             }
         }
     }
@@ -137,7 +180,9 @@ public sealed class MainViewModel : ViewModelBase
         {
             if (SetProperty(ref _customIp, value))
             {
+                EndSessionIfBoundToDifferentIp();
                 RaisePropertyChanged(nameof(ExpectedOntIp));
+                RaiseCanExecute();
             }
         }
     }
@@ -150,7 +195,13 @@ public sealed class MainViewModel : ViewModelBase
     public string Username
     {
         get => _username;
-        set => SetProperty(ref _username, value);
+        set
+        {
+            if (SetProperty(ref _username, value))
+            {
+                RaiseCanExecute();
+            }
+        }
     }
 
     public bool DoNotPersistCredential
@@ -162,7 +213,13 @@ public sealed class MainViewModel : ViewModelBase
     public bool TrustLocalCertificate
     {
         get => _trustLocalCertificate;
-        set => SetProperty(ref _trustLocalCertificate, value);
+        set
+        {
+            if (SetProperty(ref _trustLocalCertificate, value))
+            {
+                RaiseCanExecute();
+            }
+        }
     }
 
     public bool IsBusy
@@ -176,7 +233,7 @@ public sealed class MainViewModel : ViewModelBase
                 (TestConnectionCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (RefreshAdaptersCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (ExportCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                (LoginCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                RaiseCanExecute();
             }
         }
     }
@@ -215,6 +272,7 @@ public sealed class MainViewModel : ViewModelBase
     {
         Password.Dispose();
         Password = password.Copy();
+        RaiseCanExecute();
     }
 
     public void ClearSecrets()
@@ -248,6 +306,7 @@ public sealed class MainViewModel : ViewModelBase
 
         await RunBusyAsync("Detectar ONT", async () =>
         {
+            EndSessionIfBoundToDifferentIp();
             var report = await _detectOnt.ExecuteAsync(
                 new DetectOntCommand(SelectedAdapter, target, TrustLocalCertificate),
                 _cts.Token);
@@ -271,10 +330,20 @@ public sealed class MainViewModel : ViewModelBase
                 Boot = device.Identity.Firmware.BootDisplay;
                 Serial = SensitiveDataMasker.MaskSerial(device.Identity.SerialNumber);
                 Mac = SensitiveDataMasker.MaskMac(device.Identity.MacAddress);
+                _lastProbe = AdapterProbeResult.Match(
+                    device.AdapterId,
+                    device.Identity.Manufacturer,
+                    device.Identity.Model,
+                    device.Confidence,
+                    device.Endpoint,
+                    device.Evidence.Select(item => new ProbeEvidence("public-html", item)).ToList(),
+                    report.Capabilities?.LoginFormVisible == true,
+                    device.Endpoint.Scheme == "https");
             }
             else
             {
                 ClearIdentity("Não identificado");
+                _lastProbe = null;
             }
 
             if (report.PublicDiagnostics is { } diagnostics)
@@ -294,6 +363,23 @@ public sealed class MainViewModel : ViewModelBase
             if (report.Connectivity is { } connectivity)
             {
                 LastOperation = $"Detecção em {target}: HTTPS={(connectivity.HttpsReachable ? "sim" : "não")}, HTTP={(connectivity.HttpReachable ? "sim" : "não")}, ICMP={(connectivity.IcmpReachable ? "sim" : "não")}";
+            }
+
+            _lastReport = report;
+            RaisePropertyChanged(nameof(IsAuthenticationMapped));
+            if (IsAuthenticationMapped && report.Status == ApplicationStatus.Detected)
+            {
+                AuthState = AuthSessionState.ReadyToAuthenticate;
+                AuthMessage = "Pronto para autenticar. Informe a credencial da etiqueta e clique em Login uma vez.";
+            }
+            else if (report.Status == ApplicationStatus.ControlledFailure)
+            {
+                AuthState = AuthSessionState.ControlledFailure;
+                ClearSecrets();
+            }
+            else
+            {
+                AuthState = AuthSessionState.Unmapped;
             }
 
             if (report.Status == ApplicationStatus.ControlledFailure)
@@ -368,6 +454,169 @@ public sealed class MainViewModel : ViewModelBase
                 password = null;
             }
         });
+    }
+
+    private async Task LoginAsync()
+    {
+        if (!CanLogin() || _lastProbe is null)
+        {
+            return;
+        }
+
+        if (!TryGetTarget(out var target, out var error))
+        {
+            SetFailure(error);
+            return;
+        }
+
+        await RunBusyAsync("Login", async () =>
+        {
+            AuthState = AuthSessionState.Authenticating;
+            _authSession.SetState(AuthSessionState.Authenticating);
+            AuthMessage = "Autenticando — um único POST no endpoint de login observado.";
+            using var credentials = new DeviceCredentials(Username, Password.Copy(), false);
+            var result = await _authenticate.ExecuteAsync(
+                new AuthenticateCommand(
+                    _lastProbe.Endpoint,
+                    _lastProbe,
+                    credentials,
+                    TrustLocalCertificate,
+                    _lastReport?.PublicObservation?.Certificate.Sha256Fingerprint),
+                _cts.Token);
+
+            AuthState = result.SessionState;
+            AuthMessage = result.Outcome == AuthenticationOutcome.Succeeded
+                ? "Autenticado — somente leitura. A senha foi removida da memória."
+                : result.Error?.Message ?? AuthState.ToUiLabel();
+            LastOperation = $"Login: {AuthState.ToUiLabel()} POST={result.PostCount} HTTP={result.HttpStatus?.ToString() ?? "—"}";
+
+            ClearPasswordOnly();
+
+            if (result.Outcome == AuthenticationOutcome.Succeeded && result.Snapshot is { } snapshot)
+            {
+                Status = ApplicationStatus.Authenticated;
+                StatusLabel = ApplicationStatus.Authenticated.ToUiLabel();
+                ApplySnapshot(snapshot);
+            }
+            else if (result.SessionState == AuthSessionState.CertificateChanged)
+            {
+                _authSession.End("certificado-alterado");
+                Recommendations = "O certificado TLS mudou. Confirme novamente a confiança local e detecte a ONT.";
+            }
+        });
+    }
+
+    private void EndSession()
+    {
+        _authSession.End("operador");
+        AuthState = IsAuthenticationMapped ? AuthSessionState.ReadyToAuthenticate : AuthSessionState.Unmapped;
+        AuthMessage = "Sessão encerrada. Cookies em memória foram descartados. Nenhum POST de logout foi enviado.";
+        LastOperation = "Sessão autenticada encerrada";
+        if (Status == ApplicationStatus.Authenticated || Status == ApplicationStatus.DiagnosticsCompleted)
+        {
+            Status = ApplicationStatus.Detected;
+            StatusLabel = ApplicationStatus.Detected.ToUiLabel();
+        }
+
+        RaiseCanExecute();
+    }
+
+    private async Task ExportAuthenticatedAsync()
+    {
+        await RunBusyAsync("Exportar diagnóstico autenticado", async () =>
+        {
+            var password = ReadPasswordForScanOnly();
+            try
+            {
+                var result = await _exportAuthenticated.ExecuteAsync(
+                    new ExportAuthenticatedDiagnosticCommand(Username, password),
+                    _cts.Token);
+                if (result.IsFailure)
+                {
+                    SetFailure(result.Error?.Message + " " + result.Error?.Recommendation);
+                    return;
+                }
+
+                ExportPath = result.Value!;
+                LastOperation = "Diagnóstico autenticado sanitizado salvo em " + result.Value;
+                Recommendations = "Pacote autenticado sem HTML bruto, cookies ou credenciais.";
+            }
+            finally
+            {
+                password = null;
+            }
+        });
+    }
+
+    private void ApplySnapshot(AuthenticatedReadSnapshot snapshot)
+    {
+        Manufacturer = snapshot.Identity.Manufacturer;
+        Model = snapshot.Identity.Model ?? Model;
+        Hardware = snapshot.Identity.Firmware.HardwareVersion ?? Hardware;
+        Firmware = snapshot.Identity.Firmware.SoftwareVersion ?? Firmware;
+        Boot = snapshot.Identity.Firmware.BootVersion ?? Boot;
+        Serial = SensitiveDataMasker.MaskSerial(snapshot.Identity.SerialNumber);
+        Mac = SensitiveDataMasker.MaskMac(snapshot.Identity.MacAddress);
+        Pon = snapshot.Diagnostics.Pon.OnuState ?? snapshot.Diagnostics.Pon.Description ?? Pon;
+        Temperature = snapshot.Diagnostics.Optical.Temperature ?? Temperature;
+        OpticalPower = FormatOptical(snapshot.Diagnostics.Optical);
+        WanProfiles = snapshot.Diagnostics.WanProfiles.Count == 0
+            ? snapshot.Diagnostics.WanSummary ?? WanProfiles
+            : string.Join(Environment.NewLine, snapshot.Diagnostics.WanProfiles.Select(profile => profile.Summary));
+        Recommendations = "Sessão autenticada somente leitura. Páginas GET: "
+                          + string.Join(", ", snapshot.PagesRead)
+                          + $". POSTs: {snapshot.PostCount}.";
+    }
+
+    private bool CanLogin()
+        => !IsBusy
+           && IsAuthenticationMapped
+           && TrustLocalCertificate
+           && _lastProbe is not null
+           && TryGetTarget(out var target, out _)
+           && target.Equals(_lastProbe.Endpoint.Address)
+           && !string.IsNullOrWhiteSpace(Username)
+           && Password.Length > 0
+           && AuthState is AuthSessionState.ReadyToAuthenticate
+               or AuthSessionState.CredentialRejected
+               or AuthSessionState.ControlledFailure
+               or AuthSessionState.Unmapped
+           && AuthState != AuthSessionState.Authenticating
+           && !IsAuthenticated;
+
+    private bool CanExportAuthenticated()
+        => !IsBusy && IsAuthenticated && _authSession.Snapshot is not null;
+
+    private void EndSessionIfBoundToDifferentIp()
+    {
+        if (_authSession.DomainSession is null)
+        {
+            return;
+        }
+
+        if (!TryGetTarget(out var target, out _) || !_authSession.IsBoundTo(target, _authSession.DomainSession.BoundCertificateSha256))
+        {
+            _authSession.End("ip-ou-alvo-alterado");
+            AuthState = AuthSessionState.Unmapped;
+            AuthMessage = "A sessão anterior foi encerrada porque o IP mudou.";
+        }
+    }
+
+    private void ClearPasswordOnly()
+    {
+        Password.Dispose();
+        Password = new SecureString();
+        ClearPasswordRequested?.Invoke(this, EventArgs.Empty);
+        RaiseCanExecute();
+    }
+
+    private void RaiseCanExecute()
+    {
+        (LoginCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (EndSessionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ExportAuthenticatedCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        RaisePropertyChanged(nameof(IsAuthenticationMapped));
+        RaisePropertyChanged(nameof(IsAuthenticated));
     }
 
     private void ApplyObservation(HttpPublicObservation? observation)

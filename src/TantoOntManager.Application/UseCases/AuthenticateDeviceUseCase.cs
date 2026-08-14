@@ -3,6 +3,8 @@ using TantoOntManager.Application.Contracts;
 using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.Domain.Adapters;
 using TantoOntManager.Domain.Audit;
+using TantoOntManager.Domain.Sessions;
+using TantoOntManager.Security.Tls;
 
 namespace TantoOntManager.Application.UseCases;
 
@@ -11,17 +13,20 @@ public sealed class AuthenticateDeviceUseCase : IAuthenticateDeviceUseCase
     private readonly IReadOnlyList<IOntAuthenticationAdapter> _authAdapters;
     private readonly ISecureCredentialStore _credentialStore;
     private readonly IAuditLogService _auditLog;
+    private readonly ProbeSessionSettings _probeSessionSettings;
     private readonly ILogger<AuthenticateDeviceUseCase> _logger;
 
     public AuthenticateDeviceUseCase(
         IEnumerable<IOntAuthenticationAdapter> authAdapters,
         ISecureCredentialStore credentialStore,
         IAuditLogService auditLog,
+        ProbeSessionSettings probeSessionSettings,
         ILogger<AuthenticateDeviceUseCase> logger)
     {
         _authAdapters = authAdapters.ToList();
         _credentialStore = credentialStore;
         _auditLog = auditLog;
+        _probeSessionSettings = probeSessionSettings;
         _logger = logger;
     }
 
@@ -31,8 +36,12 @@ public sealed class AuthenticateDeviceUseCase : IAuthenticateDeviceUseCase
     {
         try
         {
-            var adapter = _authAdapters.FirstOrDefault(item => item.AdapterId == command.Probe.AdapterId);
-            if (adapter is null || !adapter.CanAttemptAuthentication(command.Probe))
+            _probeSessionSettings.Trust = command.TrustLocalCertificate
+                ? LocalCertificateTrust.ForSelectedEndpoint(command.Endpoint.Address)
+                : LocalCertificateTrust.Denied(command.Endpoint.Address);
+
+            var adapter = _authAdapters.FirstOrDefault(item => item.CanAttemptAuthentication(command.Probe));
+            if (adapter is null)
             {
                 var result = AuthenticationResult.MethodNotMapped(
                     command.Probe.Manufacturer,
@@ -46,18 +55,34 @@ public sealed class AuthenticateDeviceUseCase : IAuthenticateDeviceUseCase
                     "Nenhuma credencial foi transmitida."));
 
                 _logger.LogInformation(
-                    "Autenticação não mapeada para o adaptador {AdapterId} em {Target}",
-                    command.Probe.AdapterId,
+                    "Autenticação não mapeada para o alvo {Target}",
                     command.Endpoint.Address);
 
                 return result;
             }
 
-            return await adapter.AuthenticateAsync(
+            var auth = await adapter.AuthenticateAsync(
                 command.Endpoint,
                 command.Probe,
                 command.Credentials,
+                command.PinnedCertificateSha256,
                 cancellationToken);
+
+            _auditLog.Record(AuditEvent.Create(
+                "authenticate",
+                auth.SessionState.ToUiLabel(),
+                command.Endpoint.Address.ToString(),
+                $"status={auth.HttpStatus}; posts={auth.PostCount}; redirects={auth.RedirectCount}; hash={auth.SanitizedResponseHash}; endpoint={auth.MaskedEndpoint}"));
+
+            _logger.LogInformation(
+                "Autenticação concluída target={Target} estado={State} posts={Posts} status={Status} duracao={Duration}",
+                command.Endpoint.Address,
+                auth.SessionState,
+                auth.PostCount,
+                auth.HttpStatus,
+                auth.Duration);
+
+            return auth;
         }
         finally
         {

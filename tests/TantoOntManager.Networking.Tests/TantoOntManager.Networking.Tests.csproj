@@ -20,5 +20,6 @@
     <ProjectReference Include="..\..\src\TantoOntManager.Domain\TantoOntManager.Domain.csproj" />
     <ProjectReference Include="..\..\src\TantoOntManager.Security\TantoOntManager.Security.csproj" />
     <ProjectReference Include="..\..\src\TantoOntManager.DeviceAdapters.Abstractions\TantoOntManager.DeviceAdapters.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\TantoOntManager.DeviceAdapters.Zte\TantoOntManager.DeviceAdapters.Zte.csproj" />
   </ItemGroup>
 </Project>

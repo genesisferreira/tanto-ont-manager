@@ -7,7 +7,9 @@ namespace TantoOntManager.Application.UseCases;
 public sealed record AuthenticateCommand(
     OntEndpoint Endpoint,
     AdapterProbeResult Probe,
-    DeviceCredentials Credentials);
+    DeviceCredentials Credentials,
+    bool TrustLocalCertificate = true,
+    string? PinnedCertificateSha256 = null);
 
 public interface IAuthenticateDeviceUseCase
 {

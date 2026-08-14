@@ -10,7 +10,7 @@ using TantoOntManager.DeviceAdapters.Zte.Parsing;
 
 namespace TantoOntManager.DeviceAdapters.Zte;
 
-public sealed class ZteDeviceAdapter : IOntDeviceAdapter, IOntAuthenticationAdapter
+public sealed class ZteDeviceAdapter : IOntDeviceAdapter
 {
     public const string Id = "zte-zxhn-public-v1";
 
@@ -111,13 +111,13 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter, IOntAuthenticationAdap
             return Task.FromResult(DeviceDiagnosticsResult.Success(
                 DeviceDiagnostics.PublicInterfaceOnly(
                     "PON, temperatura, potência óptica e perfis WAN não estão disponíveis na página pública. " +
-                    "O método de autenticação desta firmware ainda não foi mapeado; nenhum endpoint interno foi consultado.")));
+                    "O método de autenticação desta firmware ainda não foi mapeado para leitura autenticada neste adaptador de detecção.")));
         }
 
         return Task.FromResult(DeviceDiagnosticsResult.Unavailable(
             Error.Create(
                 ErrorCodes.DiagnosticsRequiresAuthentication,
-                "Diagnóstico autenticado ainda não homologado para esta firmware."),
+                "Diagnóstico autenticado é lido pelo adaptador F6201B V9.3.10P8N1 após o login."),
             true));
     }
 
@@ -133,34 +133,19 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter, IOntAuthenticationAdap
             HttpsAvailable: session.Endpoint.Scheme == "https",
             HttpAvailable: session.Endpoint.Scheme == "http",
             LoginFormVisible: analysis.LoginFormVisible,
-            AuthenticationMapped: false,
+            AuthenticationMapped: session.IsAuthenticated,
             IdentityReadableWithoutLogin: analysis.Model is not null,
             DiagnosticsReadableWithoutLogin: false,
             WriteOperationsSupportedByAdapter: false,
             Notes:
             [
-                "Fase 1: somente leitura da interface pública.",
-                "Autenticação, WAN, VLAN, PPPoE e TR-069 não estão mapeados.",
+                "Fase 0.1.2-lab: detecção pública e autenticação autorizada somente leitura da F6201B V9.3.10P8N1.",
+                "WAN, VLAN, PPPoE e TR-069 não são gravados.",
                 "F6600P e F670L têm estrutura preparada, sem detector específico nesta entrega.",
                 "Gravação desativada por padrão e sem contrato homologado."
             ]);
 
         return DeviceCapabilitiesResult.Success(capabilities);
-    }
-
-    public bool CanAttemptAuthentication(AdapterProbeResult probe) => false;
-
-    public Task<AuthenticationResult> AuthenticateAsync(
-        OntEndpoint endpoint,
-        AdapterProbeResult probe,
-        DeviceCredentials credentials,
-        CancellationToken cancellationToken)
-    {
-        _ = endpoint;
-        _ = credentials;
-        _ = cancellationToken;
-        return Task.FromResult(
-            AuthenticationResult.MethodNotMapped(Manufacturer, probe.Model, null));
     }
 
     private async Task<DeviceIdentityResult> ReadPublicIdentityAsync(

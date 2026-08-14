@@ -17,6 +17,7 @@ public sealed class DetectOntUseCase : IDetectOntUseCase
 {
     private readonly IConnectivityProbeService _probeService;
     private readonly IReadOnlyList<IOntDeviceAdapter> _adapters;
+    private readonly IReadOnlyList<IOntAuthenticationAdapter> _authAdapters;
     private readonly IAuditLogService _auditLog;
     private readonly ProbeSessionSettings _probeSessionSettings;
     private readonly ILogger<DetectOntUseCase> _logger;
@@ -24,12 +25,14 @@ public sealed class DetectOntUseCase : IDetectOntUseCase
     public DetectOntUseCase(
         IConnectivityProbeService probeService,
         IEnumerable<IOntDeviceAdapter> adapters,
+        IEnumerable<IOntAuthenticationAdapter> authAdapters,
         IAuditLogService auditLog,
         ProbeSessionSettings probeSessionSettings,
         ILogger<DetectOntUseCase> logger)
     {
         _probeService = probeService;
         _adapters = adapters.ToList();
+        _authAdapters = authAdapters.ToList();
         _auditLog = auditLog;
         _probeSessionSettings = probeSessionSettings;
         _logger = logger;
@@ -120,7 +123,25 @@ public sealed class DetectOntUseCase : IDetectOntUseCase
                 diagnostics = diagnosticsResult.Diagnostics;
                 status = ApplicationStatus.Detected;
 
-                if (!capabilityResult.Capabilities?.AuthenticationMapped ?? true)
+                if (_authAdapters.Any(item => item.CanAttemptAuthentication(best)))
+                {
+                    capabilities = capabilities is null
+                        ? null
+                        : capabilities with
+                        {
+                            AuthenticationMapped = true,
+                            Notes = capabilities.Notes.Concat(
+                            [
+                                "Login homologado para F6201B V9.3.10P8N1: um POST no endpoint observado, leitura GET somente."
+                            ]).ToList()
+                        };
+                    recommendations.Add(new OperatorRecommendation(
+                        "AUTH",
+                        "Autenticação homologada (somente leitura)",
+                        "Informe a credencial da etiqueta e clique em Login uma vez. Nenhum outro POST será enviado.",
+                        false));
+                }
+                else
                 {
                     recommendations.Add(OperatorRecommendation.AuthenticationNotMapped());
                 }

@@ -72,7 +72,7 @@ public sealed class ExportPublicDiagnosticUseCase : IExportPublicDiagnosticUseCa
 
         var manifest = new PublicExportManifest(
             "Tanto ONT Manager",
-            "0.1.1-lab",
+            ProductInfo.Version,
             DateTimeOffset.Now,
             masked.Replace('-', '.'),
             document.Endpoint.Scheme,
