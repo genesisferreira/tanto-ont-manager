@@ -32,6 +32,10 @@ logs/
 *.pfx
 *.key
 
+## Local lab output (never commit)
+diagnostics/
+observer-webview/
+
 ## OS
 Thumbs.db
 Desktop.ini

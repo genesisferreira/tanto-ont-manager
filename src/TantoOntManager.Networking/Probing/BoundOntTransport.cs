@@ -333,6 +333,24 @@ public sealed class BoundOntTransport : IBoundOntTransport
             CookieCount);
     }
 
+    public IReadOnlyList<IsolatedObserverCookie> CopyCookiesForIsolatedObserver()
+    {
+        lock (_gate)
+        {
+            return _cookies.GetCookies(_endpoint.BaseUri)
+                .Cast<Cookie>()
+                .Where(item => !item.Expired)
+                .Select(item => new IsolatedObserverCookie(
+                    item.Name,
+                    item.Value,
+                    item.Domain,
+                    item.Path,
+                    item.Secure,
+                    item.HttpOnly))
+                .ToList();
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -533,7 +551,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
             {
                 Timeout = TimeSpan.FromSeconds(8)
             };
-            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.5 (lab-readonly)");
+            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.6 (lab-readonly)");
             _client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
             _httpClientInstanceId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_client);
             return _client;

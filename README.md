@@ -2,12 +2,12 @@
 
 Ferramenta interna da **Tanto Telecom** para identificação, diagnóstico e, no futuro, padronização de ONTs conectadas ao computador por cabo de rede.
 
-A Fase 1 é **somente leitura**. A versão `0.1.5-lab` faz leitura dirigida Device/PON/WAN da F6201B somente com GET evidenciados. Não altera WAN, PPPoE, VLAN, firmware nem a placa Ethernet.
+A Fase 1 é **somente leitura**. A versão `0.1.6-lab` observa passivamente os GETs dinâmicos da interface web da F6201B. Não altera WAN, PPPoE, VLAN, firmware nem a placa Ethernet.
 
 ## Status da Fase 1
 
 - Modo de operação: `Laboratório — somente leitura`
-- Versão: `0.1.5-lab`
+- Versão: `0.1.6-lab`
 - Processamento: uma ONT por vez
 - Modelos iniciais previstos: ZTE ZXHN F6201B, F6600P, F670L
 - Detector público: F6201B por pontuação de evidências (título, Welcome to F6201B, ZTE Corporation, rodapé)
@@ -51,6 +51,7 @@ Diagnósticos públicos:
 - Mostra status HTTP, título, tamanho, hash curto, confiança e evidências
 - Exporta ZIP sanitizado da página pública
 - Login da F6201B V9.3.10P8N1: um POST no endpoint observado, cookies só em memória
+- Observação passiva dos GETs dinâmicos em WebView2 isolado (`Observar navegação GET`)
 - Leitura autenticada GET por tags evidenciadas e classificadas SafeRead
 - Encerrar sessão envia no máximo um POST de logout oficial e descarta cookies
 - Exporta diagnóstico autenticado sanitizado, com inspeção do ZIP

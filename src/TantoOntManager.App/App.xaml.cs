@@ -2,6 +2,7 @@
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using TantoOntManager.App.ViewModels;
+using TantoOntManager.Application.Contracts;
 using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.Infrastructure.DependencyInjection;
 
@@ -33,6 +34,7 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         _services?.GetService<MainViewModel>()?.ClearSecrets();
+        _services?.GetService<IObservationSessionStore>()?.FinishAndDestroy();
         _services?.GetService<IOntAuthSessionStore>()?.End("aplicativo-fechado");
         _services?.Dispose();
         base.OnExit(e);

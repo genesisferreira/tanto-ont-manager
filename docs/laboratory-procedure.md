@@ -41,6 +41,16 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 10. Após o login, confira as abas Dispositivo, PON e WAN. Use `Exportar diagnóstico autenticado` e confira a inspeção do ZIP.
 11. Clique em `Encerrar sessão` ao terminar. O aplicativo envia no máximo um POST de logout oficial e descarta os cookies.
 
+## Observação passiva de GETs (0.1.6-lab)
+
+1. Com a F6201B autenticada em modo laboratório, clique em `Observar navegação GET` e confirme.
+2. No WebView2 isolado, feche o baseline do shell e use os botões Device / PON / WAN Status / WAN Config.
+3. Durante os 20 s de cada captura, navegue **manualmente** na tela correspondente da ONT.
+4. Confira os contadores: POST de configuração deve permanecer 0.
+5. `Exportar observação sanitizada` e inspecione IncludesCookies/Credentials/Tokens/RawAuthenticatedBody = false.
+6. `Promover contrato de leitura` gera só um JSON local em `diagnostics/proposals`; o adaptador F6201B não muda.
+7. Feche o observador: a pasta WebView2 e os cookies temporários são destruídos.
+
 ## Resultado esperado nesta fase
 
 - Resposta HTTPS do endereço testado (HTTP pode estar indisponível)

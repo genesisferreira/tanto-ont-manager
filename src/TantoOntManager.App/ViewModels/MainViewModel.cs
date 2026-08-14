@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Windows.Input;
+using TantoOntManager.App.Observation;
 using TantoOntManager.Application.Contracts;
 using TantoOntManager.Application.UseCases;
 using TantoOntManager.DeviceAdapters.Abstractions;
@@ -14,6 +16,7 @@ using TantoOntManager.Domain.Detection;
 using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Network;
 using TantoOntManager.Domain.Sessions;
+using TantoOntManager.Domain.Observation;
 using TantoOntManager.Infrastructure.DependencyInjection;
 
 namespace TantoOntManager.App.ViewModels;
@@ -31,9 +34,12 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IExportAuthenticatedDiagnosticUseCase _exportAuthenticated;
     private readonly IMapAuthenticatedReadsUseCase _mapReads;
     private readonly IExportAuthenticatedReadMapUseCase _exportReadMap;
+    private readonly IExportObservationUseCase _exportObservation;
+    private readonly IPromoteReadContractUseCase _promoteContract;
     private readonly IAuthenticateDeviceUseCase _authenticate;
     private readonly IEndAuthenticatedSessionUseCase _endSession;
     private readonly IOntAuthSessionStore _authSession;
+    private readonly IObservationSessionStore _observation;
     private readonly LoggingPaths _loggingPaths;
     private CancellationTokenSource _cts = new();
 
@@ -85,6 +91,8 @@ public sealed class MainViewModel : ViewModelBase
     private string _loid = "—";
     private string _gponSerial = "—";
     private string _sessionPhase = "Detecção pública";
+    private string _observationText = "Observação GET indisponível até autenticar a F6201B e confirmar o modo laboratório.";
+    private string _observationCounters = "GET observados: 0";
 
     public MainViewModel(
         IListEthernetAdaptersUseCase listAdapters,
@@ -94,9 +102,12 @@ public sealed class MainViewModel : ViewModelBase
         IExportAuthenticatedDiagnosticUseCase exportAuthenticated,
         IMapAuthenticatedReadsUseCase mapReads,
         IExportAuthenticatedReadMapUseCase exportReadMap,
+        IExportObservationUseCase exportObservation,
+        IPromoteReadContractUseCase promoteContract,
         IAuthenticateDeviceUseCase authenticate,
         IEndAuthenticatedSessionUseCase endSession,
         IOntAuthSessionStore authSession,
+        IObservationSessionStore observation,
         LoggingPaths loggingPaths)
     {
         _listAdapters = listAdapters;
@@ -106,9 +117,12 @@ public sealed class MainViewModel : ViewModelBase
         _exportAuthenticated = exportAuthenticated;
         _mapReads = mapReads;
         _exportReadMap = exportReadMap;
+        _exportObservation = exportObservation;
+        _promoteContract = promoteContract;
         _authenticate = authenticate;
         _endSession = endSession;
         _authSession = authSession;
+        _observation = observation;
         _loggingPaths = loggingPaths;
 
         Adapters = new ObservableCollection<EthernetAdapterInfo>();
@@ -122,10 +136,15 @@ public sealed class MainViewModel : ViewModelBase
         ExportAuthenticatedCommand = new RelayCommand(ExportAuthenticatedAsync, CanExportAuthenticated);
         MapReadsCommand = new RelayCommand(MapReadsAsync, () => !IsBusy && IsAuthenticated);
         ExportReadMapCommand = new RelayCommand(ExportReadMapAsync, CanExportReadMap);
+        ObserveNavigationCommand = new RelayCommand(ObserveNavigationAsync, CanObserve);
+        ExportObservationCommand = new RelayCommand(ExportObservationAsync, CanExportObservation);
+        PromoteContractCommand = new RelayCommand(PromoteContractAsync, CanPromoteContract);
         LoadAdapters();
     }
 
     public event EventHandler? ClearPasswordRequested;
+    public event EventHandler<ObservationLaunchRequest>? ObservationWindowRequested;
+    public event EventHandler? ObservationMustStop;
 
     public ObservableCollection<EthernetAdapterInfo> Adapters { get; }
     public ObservableCollection<string> KnownIpOptions { get; }
@@ -138,6 +157,9 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand ExportAuthenticatedCommand { get; }
     public ICommand MapReadsCommand { get; }
     public ICommand ExportReadMapCommand { get; }
+    public ICommand ObserveNavigationCommand { get; }
+    public ICommand ExportObservationCommand { get; }
+    public ICommand PromoteContractCommand { get; }
 
     public string ProductName => "Tanto ONT Manager";
     public string ModeLabel => OperationMode.LaboratoryReadOnly.ToUiLabel();
@@ -300,6 +322,8 @@ public sealed class MainViewModel : ViewModelBase
     public string Loid { get => _loid; set => SetProperty(ref _loid, value); }
     public string GponSerial { get => _gponSerial; set => SetProperty(ref _gponSerial, value); }
     public string SessionPhase { get => _sessionPhase; set => SetProperty(ref _sessionPhase, value); }
+    public string ObservationText { get => _observationText; set => SetProperty(ref _observationText, value); }
+    public string ObservationCounters { get => _observationCounters; set => SetProperty(ref _observationCounters, value); }
 
     public SecureString Password { get; private set; } = new();
 
@@ -622,6 +646,7 @@ public sealed class MainViewModel : ViewModelBase
             ConfigPostCount = "0";
             LastOperation = AuthMessage + $" POST login={LoginPostCount} POST logout={LogoutPostCount} POST configuração=0";
             ReadMapText = "Mapa de leituras autenticadas indisponível até clicar em Mapear leituras.";
+            StopObservation("sessão encerrada");
             RaiseCanExecute();
         });
     }
@@ -777,6 +802,113 @@ public sealed class MainViewModel : ViewModelBase
     private bool CanExportReadMap()
         => !IsBusy && IsAuthenticated && _authSession.ReadMap is not null;
 
+    private bool CanObserve()
+        => !IsBusy
+           && IsAuthenticated
+           && IsAuthenticationMapped
+           && _authSession.Transport is not null
+           && TryGetTarget(out var target, out _)
+           && _authSession.IsBoundTo(target, _authSession.DomainSession?.BoundCertificateSha256);
+
+    private bool CanExportObservation()
+        => !IsBusy && (_observation.Engine is not null || _observation.LastSnapshot is not null);
+
+    private bool CanPromoteContract()
+        => CanExportObservation();
+
+    private Task ObserveNavigationAsync()
+    {
+        if (!CanObserve() || _authSession.Transport is null || _authSession.DomainSession is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var folder = Path.Combine(_loggingPaths.RootDirectory, "observer-webview", Guid.NewGuid().ToString("N"));
+        var engine = new ObservationEngine(_authSession.Transport.BoundAddress);
+        _observation.Attach(engine, folder);
+        var request = new ObservationLaunchRequest(
+            _authSession.Transport.BoundAddress,
+            _authSession.DomainSession.Endpoint.BaseUri,
+            _authSession.Transport.CopyCookiesForIsolatedObserver(),
+            folder);
+        ObservationWindowRequested?.Invoke(this, request);
+        ObservationText = "Observador GET aberto. Navegue manualmente nas telas Device/PON/WAN. POST permanece bloqueado.";
+        LastOperation = "Observar navegação GET iniciado em WebView2 isolado.";
+        RaiseCanExecute();
+        return Task.CompletedTask;
+    }
+
+    private async Task ExportObservationAsync()
+    {
+        await RunBusyAsync("Exportar observação sanitizada", async () =>
+        {
+            RefreshObservationPanel();
+            var result = await _exportObservation.ExecuteAsync(_cts.Token);
+            if (result.IsFailure || result.Value is null)
+            {
+                LastOperation = result.Error?.Message ?? "Falha ao exportar a observação.";
+                return;
+            }
+
+            ExportPath = result.Value.ZipPath;
+            ZipInspection = result.Value.Inspection.ToOperatorText();
+            LastOperation = "Observação sanitizada salva em " + result.Value.ZipPath;
+        });
+    }
+
+    private async Task PromoteContractAsync()
+    {
+        await RunBusyAsync("Promover contrato de leitura", async () =>
+        {
+            var result = await _promoteContract.ExecuteAsync(_cts.Token);
+            if (result.IsFailure || result.Value is null)
+            {
+                LastOperation = result.Error?.Message ?? "Falha ao gravar a proposta.";
+                return;
+            }
+
+            ExportPath = result.Value;
+            LastOperation = "Proposta local gravada sem alterar o adaptador: " + result.Value;
+            Recommendations = "A proposta não entra na allowlist. Firmware Unconfirmed continua sem escrita.";
+        });
+    }
+
+    private void StopObservation(string reason)
+    {
+        if (_observation.IsOpen || _observation.Engine is not null)
+        {
+            _observation.Engine?.EndBecauseIpChanged();
+            ObservationMustStop?.Invoke(this, EventArgs.Empty);
+            _observation.FinishAndDestroy();
+        }
+
+        ObservationText = "Observação encerrada (" + reason + "). Cookies temporários do WebView2 foram destruídos.";
+        RefreshObservationPanel();
+    }
+
+    public IObservationSessionStore ObservationSession => _observation;
+
+    public void DeclineObservation() => StopObservation("não confirmado");
+
+    public void RefreshObservationPanel()
+    {
+        var snapshot = _observation.Engine?.Snapshot() ?? _observation.LastSnapshot;
+        if (snapshot is null)
+        {
+            ObservationCounters = "GET observados: 0";
+            return;
+        }
+
+        var counters = snapshot.Counters;
+        ObservationCounters =
+            $"GET observados: {counters.GetsObserved}{Environment.NewLine}" +
+            $"GET permitidos: {counters.GetsAllowed}{Environment.NewLine}" +
+            $"Requisições bloqueadas: {counters.RequestsBlocked}{Environment.NewLine}" +
+            $"POST observados e bloqueados: {counters.PostsObservedAndBlocked}{Environment.NewLine}" +
+            "POST de configuração enviados: 0";
+        ObservationText = snapshot.SummaryText;
+    }
+
     private void EndSessionIfBoundToDifferentIp()
     {
         if (_authSession.DomainSession is null)
@@ -786,6 +918,7 @@ public sealed class MainViewModel : ViewModelBase
 
         if (!TryGetTarget(out var target, out _) || !_authSession.IsBoundTo(target, _authSession.DomainSession.BoundCertificateSha256))
         {
+            StopObservation("ip-ou-alvo-alterado");
             _authSession.End("ip-ou-alvo-alterado");
             AuthState = AuthSessionState.Unmapped;
             AuthMessage = "A sessão anterior foi encerrada porque o IP mudou.";
@@ -808,6 +941,9 @@ public sealed class MainViewModel : ViewModelBase
         (ExportAuthenticatedCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (MapReadsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportReadMapCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ObserveNavigationCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ExportObservationCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (PromoteContractCommand as RelayCommand)?.RaiseCanExecuteChanged();
         RaisePropertyChanged(nameof(IsAuthenticationMapped));
         RaisePropertyChanged(nameof(IsAuthenticated));
     }

@@ -40,4 +40,9 @@ public static class ErrorCodes
     public const string IdentityRequiresAuthentication = "DET.IDENTITY_REQUIRES_AUTH";
     public const string DiagnosticsRequiresAuthentication = "DET.DIAGNOSTICS_REQUIRES_AUTH";
     public const string UnexpectedFailure = "APP.UNEXPECTED_FAILURE";
+    public const string ObservationRequiresSession = "OBS.REQUIRES_SESSION";
+    public const string ObservationRequiresConfirmation = "OBS.REQUIRES_CONFIRMATION";
+    public const string ObservationCancelled = "OBS.CANCELLED";
+    public const string ObservationIpChanged = "OBS.IP_CHANGED";
+    public const string ObservationExportRequiresCapture = "OBS.EXPORT_REQUIRES_CAPTURE";
 }

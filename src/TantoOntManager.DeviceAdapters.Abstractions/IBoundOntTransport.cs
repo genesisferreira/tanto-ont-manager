@@ -69,6 +69,38 @@ public interface IBoundOntTransport : IDisposable
     void RememberReferencedAsset(string relativePath);
 
     void ClearCookiesAndState(string reason);
+
+    IReadOnlyList<IsolatedObserverCookie> CopyCookiesForIsolatedObserver()
+        => [];
+}
+
+public sealed class IsolatedObserverCookie
+{
+    private readonly string _value;
+
+    public IsolatedObserverCookie(string name, string value, string domain, string path, bool secure, bool httpOnly)
+    {
+        Name = name;
+        _value = value ?? string.Empty;
+        Domain = domain;
+        Path = string.IsNullOrWhiteSpace(path) ? "/" : path;
+        Secure = secure;
+        HttpOnly = httpOnly;
+    }
+
+    public string Name { get; }
+
+    public string Domain { get; }
+
+    public string Path { get; }
+
+    public bool Secure { get; }
+
+    public bool HttpOnly { get; }
+
+    public string RevealValueForIsolatedWebView() => _value;
+
+    public override string ToString() => $"{Name}=[redacted]; Domain={Domain}; Path={Path}";
 }
 
 public interface IBoundOntTransportFactory

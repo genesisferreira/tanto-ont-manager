@@ -114,6 +114,7 @@
                 <Button Content="Mapear leituras" Command="{Binding MapReadsCommand}" Margin="0,0,8,0" />
                 <Button Content="Encerrar sessão" Command="{Binding EndSessionCommand}" Style="{StaticResource SecondaryButton}" />
               </StackPanel>
+              <Button Content="Observar navegação GET" Command="{Binding ObserveNavigationCommand}" Margin="0,0,0,8" HorizontalAlignment="Left" />
               <TextBlock Text="{Binding AuthMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
             </StackPanel>
           </Border>
@@ -251,12 +252,25 @@
               <TextBlock Text="{Binding Capabilities}" TextWrapping="Wrap" Margin="0,0,0,12" />
               <Button Content="Exportar diagnóstico público" Command="{Binding ExportCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
               <Button Content="Exportar diagnóstico autenticado" Command="{Binding ExportAuthenticatedCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
-              <Button Content="Exportar mapa sanitizado" Command="{Binding ExportReadMapCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" />
+              <Button Content="Exportar mapa sanitizado" Command="{Binding ExportReadMapCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+              <Button Content="Exportar observação sanitizada" Command="{Binding ExportObservationCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+              <Button Content="Promover contrato de leitura" Command="{Binding PromoteContractCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" />
               <TextBlock Text="{Binding ExportPath}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8" />
               <TextBlock Text="Inspeção do ZIP autenticado" Foreground="{StaticResource MutedBrush}" FontSize="11" />
               <TextBlock Text="{Binding ZipInspection}" TextWrapping="Wrap" Margin="0,0,0,12" FontFamily="Consolas" />
               <TextBlock Text="Inventário SafeRead" Foreground="{StaticResource MutedBrush}" FontSize="11" />
               <TextBlock Text="{Binding InventoryText}" TextWrapping="Wrap" FontSize="12" />
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="Observação">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <TextBlock Text="Contadores do observador GET" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding ObservationCounters}" FontFamily="Consolas" Margin="0,0,0,12" />
+              <TextBlock Text="Tabela sanitizada (Tela | GET | classificação)" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding ObservationText}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />
             </StackPanel>
           </ScrollViewer>
         </TabItem>
