@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <Company>Tanto Telecom</Company>
+    <Product>Tanto ONT Manager</Product>
+    <Authors>Tanto Telecom</Authors>
+    <Version>0.1.0</Version>
+    <InformationalVersion>0.1.0-lab</InformationalVersion>
+    <Copyright>Copyright (c) Tanto Telecom</Copyright>
+    <NeutralLanguage>pt-BR</NeutralLanguage>
+  </PropertyGroup>
+</Project>

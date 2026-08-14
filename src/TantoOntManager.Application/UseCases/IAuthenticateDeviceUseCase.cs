@@ -1,0 +1,15 @@
+using TantoOntManager.Domain.Adapters;
+using TantoOntManager.Domain.Network;
+using TantoOntManager.Domain.Sessions;
+
+namespace TantoOntManager.Application.UseCases;
+
+public sealed record AuthenticateCommand(
+    OntEndpoint Endpoint,
+    AdapterProbeResult Probe,
+    DeviceCredentials Credentials);
+
+public interface IAuthenticateDeviceUseCase
+{
+    Task<AuthenticationResult> ExecuteAsync(AuthenticateCommand command, CancellationToken cancellationToken);
+}
