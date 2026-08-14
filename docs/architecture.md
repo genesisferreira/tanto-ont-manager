@@ -30,7 +30,7 @@ App (WPF / MVVM)
 
 - Uma ONT por vez, porque o IP padrão se repete.
 - Somente GET da raiz pública na detecção (`/` HTTP ou HTTPS).
-- Login da F6201B: um POST no endpoint observado; demais leituras GET na allowlist.
+- Login da F6201B: um POST de login e, no encerramento explícito, no máximo um POST de logout; demais leituras GET na allowlist.
 - Sem métodos genéricos perigosos (`ExecuteCommand`, `PostRawRequest`).
 - Escrita futura exige adaptador homologado, backup oficial, validação, rollback, confirmação e auditoria.
 

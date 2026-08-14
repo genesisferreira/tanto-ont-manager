@@ -38,8 +38,8 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 7. Clique em `Exportar diagnóstico público` se precisar arquivar a página pública.
 8. Clique em `Exportar diagnóstico público` se precisar arquivar a página pública.
 9. Se a F6201B foi identificada com confiança suficiente, informe a credencial da etiqueta e clique **uma vez** em `Login`.
-10. Após o login, use `Exportar diagnóstico autenticado` se precisar arquivar identidade/PON/WAN sanitizados.
-11. Clique em `Encerrar sessão` ao terminar. Nenhum POST de logout é enviado.
+10. Após o login, confira as abas Dispositivo, PON e WAN. Use `Exportar diagnóstico autenticado` e confira a inspeção do ZIP.
+11. Clique em `Encerrar sessão` ao terminar. O aplicativo envia no máximo um POST de logout oficial e descarta os cookies.
 
 ## Resultado esperado nesta fase
 

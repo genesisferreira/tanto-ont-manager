@@ -12,6 +12,7 @@ Toda a Fase 1 opera em **somente leitura**. Funções de escrita estão desativa
 - DPAPI está preparado para uma fase posterior; não é usado para gravar senhas agora.
 - O botão Login envia a credencial **uma vez** somente para a F6201B com contrato homologado.
 - Cookies ficam em `CookieContainer` na memória e são descartados ao encerrar a sessão, trocar o IP ou fechar o aplicativo.
+- O clique em Encerrar sessão envia o POST de logout observado na interface; se a ONT não confirmar, a sessão local mesmo assim é destruída.
 
 ## TLS
 

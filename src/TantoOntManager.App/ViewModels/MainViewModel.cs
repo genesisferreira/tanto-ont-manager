@@ -30,6 +30,7 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IExportPublicDiagnosticUseCase _exportDiagnostic;
     private readonly IExportAuthenticatedDiagnosticUseCase _exportAuthenticated;
     private readonly IAuthenticateDeviceUseCase _authenticate;
+    private readonly IEndAuthenticatedSessionUseCase _endSession;
     private readonly IOntAuthSessionStore _authSession;
     private readonly LoggingPaths _loggingPaths;
     private CancellationTokenSource _cts = new();
@@ -71,6 +72,14 @@ public sealed class MainViewModel : ViewModelBase
     private string _probeDetails = "Execute Detectar ONT para preencher o diagnóstico sanitizado.";
     private string _exportPath = "—";
     private bool _detailsExpanded;
+    private string _loginPostCount = "0";
+    private string _logoutPostCount = "0";
+    private string _configPostCount = "0";
+    private string _zipInspection = "Exporte o diagnóstico autenticado durante a sessão para inspecionar o ZIP.";
+    private string _inventoryText = "Inventário SafeRead indisponível até o login.";
+    private string _voltage = "—";
+    private string _biasCurrent = "—";
+    private string _sessionPhase = "Detecção pública";
 
     public MainViewModel(
         IListEthernetAdaptersUseCase listAdapters,
@@ -79,6 +88,7 @@ public sealed class MainViewModel : ViewModelBase
         IExportPublicDiagnosticUseCase exportDiagnostic,
         IExportAuthenticatedDiagnosticUseCase exportAuthenticated,
         IAuthenticateDeviceUseCase authenticate,
+        IEndAuthenticatedSessionUseCase endSession,
         IOntAuthSessionStore authSession,
         LoggingPaths loggingPaths)
     {
@@ -88,6 +98,7 @@ public sealed class MainViewModel : ViewModelBase
         _exportDiagnostic = exportDiagnostic;
         _exportAuthenticated = exportAuthenticated;
         _authenticate = authenticate;
+        _endSession = endSession;
         _authSession = authSession;
         _loggingPaths = loggingPaths;
 
@@ -98,7 +109,7 @@ public sealed class MainViewModel : ViewModelBase
         RefreshAdaptersCommand = new RelayCommand(LoadAdapters, () => !IsBusy);
         ExportCommand = new RelayCommand(ExportAsync, () => !IsBusy);
         LoginCommand = new RelayCommand(LoginAsync, CanLogin);
-        EndSessionCommand = new RelayCommand(EndSession, () => !IsBusy && IsAuthenticated);
+        EndSessionCommand = new RelayCommand(EndSessionAsync, () => !IsBusy && IsAuthenticated);
         ExportAuthenticatedCommand = new RelayCommand(ExportAuthenticatedAsync, CanExportAuthenticated);
         LoadAdapters();
     }
@@ -265,6 +276,14 @@ public sealed class MainViewModel : ViewModelBase
     public string ProbeDetails { get => _probeDetails; set => SetProperty(ref _probeDetails, value); }
     public string ExportPath { get => _exportPath; set => SetProperty(ref _exportPath, value); }
     public bool DetailsExpanded { get => _detailsExpanded; set => SetProperty(ref _detailsExpanded, value); }
+    public string LoginPostCount { get => _loginPostCount; set => SetProperty(ref _loginPostCount, value); }
+    public string LogoutPostCount { get => _logoutPostCount; set => SetProperty(ref _logoutPostCount, value); }
+    public string ConfigPostCount { get => _configPostCount; set => SetProperty(ref _configPostCount, value); }
+    public string ZipInspection { get => _zipInspection; set => SetProperty(ref _zipInspection, value); }
+    public string InventoryText { get => _inventoryText; set => SetProperty(ref _inventoryText, value); }
+    public string Voltage { get => _voltage; set => SetProperty(ref _voltage, value); }
+    public string BiasCurrent { get => _biasCurrent; set => SetProperty(ref _biasCurrent, value); }
+    public string SessionPhase { get => _sessionPhase; set => SetProperty(ref _sessionPhase, value); }
 
     public SecureString Password { get; private set; } = new();
 
@@ -371,6 +390,8 @@ public sealed class MainViewModel : ViewModelBase
             {
                 AuthState = AuthSessionState.ReadyToAuthenticate;
                 AuthMessage = "Pronto para autenticar. Informe a credencial da etiqueta e clique em Login uma vez.";
+                SessionPhase = "Detecção pública";
+                StatusLabel = "Detectado";
             }
             else if (report.Status == ApplicationStatus.ControlledFailure)
             {
@@ -495,7 +516,8 @@ public sealed class MainViewModel : ViewModelBase
             if (result.Outcome == AuthenticationOutcome.Succeeded && result.Snapshot is { } snapshot)
             {
                 Status = ApplicationStatus.Authenticated;
-                StatusLabel = ApplicationStatus.Authenticated.ToUiLabel();
+                StatusLabel = "Autenticado — somente leitura";
+                SessionPhase = "Sessão autenticada";
                 ApplySnapshot(snapshot);
             }
             else if (result.SessionState == AuthSessionState.CertificateChanged)
@@ -506,19 +528,23 @@ public sealed class MainViewModel : ViewModelBase
         });
     }
 
-    private void EndSession()
+    private async Task EndSessionAsync()
     {
-        _authSession.End("operador");
-        AuthState = IsAuthenticationMapped ? AuthSessionState.ReadyToAuthenticate : AuthSessionState.Unmapped;
-        AuthMessage = "Sessão encerrada. Cookies em memória foram descartados. Nenhum POST de logout foi enviado.";
-        LastOperation = "Sessão autenticada encerrada";
-        if (Status == ApplicationStatus.Authenticated || Status == ApplicationStatus.DiagnosticsCompleted)
+        await RunBusyAsync("Encerrar sessão", async () =>
         {
+            var result = await _endSession.ExecuteAsync(new EndAuthenticatedSessionCommand(true), _cts.Token);
+            var logout = result.Value;
+            AuthState = IsAuthenticationMapped ? AuthSessionState.ReadyToAuthenticate : AuthSessionState.Unmapped;
             Status = ApplicationStatus.Detected;
-            StatusLabel = ApplicationStatus.Detected.ToUiLabel();
-        }
-
-        RaiseCanExecute();
+            StatusLabel = "Detectado — sessão encerrada";
+            SessionPhase = "Sessão encerrada";
+            AuthMessage = logout?.Message ?? "Sessão local encerrada; invalidação remota não confirmada";
+            LoginPostCount = (logout?.LoginPostCount ?? 0).ToString();
+            LogoutPostCount = (logout?.LogoutPostCount ?? 0).ToString();
+            ConfigPostCount = "0";
+            LastOperation = AuthMessage + $" POST login={LoginPostCount} POST logout={LogoutPostCount} POST configuração=0";
+            RaiseCanExecute();
+        });
     }
 
     private async Task ExportAuthenticatedAsync()
@@ -537,9 +563,13 @@ public sealed class MainViewModel : ViewModelBase
                     return;
                 }
 
-                ExportPath = result.Value!;
-                LastOperation = "Diagnóstico autenticado sanitizado salvo em " + result.Value;
-                Recommendations = "Pacote autenticado sem HTML bruto, cookies ou credenciais.";
+                ExportPath = result.Value!.ZipPath;
+                ZipInspection = result.Value.Inspection.ToOperatorText();
+                LastOperation = "Diagnóstico autenticado sanitizado salvo em " + result.Value.ZipPath;
+                Status = ApplicationStatus.DiagnosticsCompleted;
+                StatusLabel = "Autenticado — somente leitura";
+                Recommendations = "Pacote autenticado sem HTML bruto, cookies ou credenciais."
+                                  + Environment.NewLine + ZipInspection;
             }
             finally
             {
@@ -559,14 +589,43 @@ public sealed class MainViewModel : ViewModelBase
         Mac = SensitiveDataMasker.MaskMac(snapshot.Identity.MacAddress);
         Pon = snapshot.Diagnostics.Pon.OnuState ?? snapshot.Diagnostics.Pon.Description ?? Pon;
         Temperature = snapshot.Diagnostics.Optical.Temperature ?? Temperature;
+        Voltage = snapshot.Diagnostics.Optical.Voltage ?? "—";
+        BiasCurrent = snapshot.Diagnostics.Optical.BiasCurrent ?? "—";
         OpticalPower = FormatOptical(snapshot.Diagnostics.Optical);
         WanProfiles = snapshot.Diagnostics.WanProfiles.Count == 0
             ? snapshot.Diagnostics.WanSummary ?? WanProfiles
-            : string.Join(Environment.NewLine, snapshot.Diagnostics.WanProfiles.Select(profile => profile.Summary));
-        Recommendations = "Sessão autenticada somente leitura. Páginas GET: "
+            : string.Join(Environment.NewLine, snapshot.Diagnostics.WanProfiles.Select(FormatWan));
+        LoginPostCount = snapshot.LoginPostCount.ToString();
+        LogoutPostCount = snapshot.LogoutPostCount.ToString();
+        ConfigPostCount = snapshot.ConfigPostCount.ToString();
+        InventoryText = snapshot.Inventory.Count == 0
+            ? "Nenhuma tag inventariada."
+            : string.Join(Environment.NewLine, snapshot.Inventory.Select(item =>
+                $"{item.Tag} · {item.Classification} · {(item.WasAccessed ? "acessada" : "não acessada")} · {item.ClassificationReason}"));
+        Recommendations = "Autenticado — somente leitura. "
+                          + $"POST login: {snapshot.LoginPostCount}. "
+                          + "POST configuração: 0. "
+                          + "Páginas GET: "
                           + string.Join(", ", snapshot.PagesRead)
-                          + $". POSTs: {snapshot.PostCount}.";
+                          + ".";
     }
+
+    private static string FormatWan(WanProfile profile)
+        => string.Join(" · ", new[]
+        {
+            profile.Name,
+            profile.Mode,
+            profile.ServiceList,
+            profile.LinkType,
+            profile.AddressFamily,
+            profile.IpType,
+            profile.NatEnabled is null ? null : (profile.NatEnabled.Value ? "NAT" : "sem NAT"),
+            profile.VlanId is null ? null : $"VLAN {profile.VlanId}",
+            profile.Priority8021p is null ? null : $"802.1p {profile.Priority8021p}",
+            profile.ConnectionState,
+            profile.Ipv4Address,
+            profile.DisconnectReason
+        }.Where(part => !string.IsNullOrWhiteSpace(part)));
 
     private bool CanLogin()
         => !IsBusy
@@ -599,6 +658,7 @@ public sealed class MainViewModel : ViewModelBase
             _authSession.End("ip-ou-alvo-alterado");
             AuthState = AuthSessionState.Unmapped;
             AuthMessage = "A sessão anterior foi encerrada porque o IP mudou.";
+            SessionPhase = "Detecção pública";
         }
     }
 

@@ -1,4 +1,5 @@
 using TantoOntManager.Domain.Common;
+using TantoOntManager.Domain.Export;
 
 namespace TantoOntManager.Application.Contracts;
 
@@ -6,7 +7,7 @@ public sealed record ExportAuthenticatedDiagnosticCommand(string? Username, stri
 
 public interface IExportAuthenticatedDiagnosticUseCase
 {
-    Task<Result<string>> ExecuteAsync(
+    Task<Result<AuthenticatedExportResult>> ExecuteAsync(
         ExportAuthenticatedDiagnosticCommand command,
         CancellationToken cancellationToken);
 }

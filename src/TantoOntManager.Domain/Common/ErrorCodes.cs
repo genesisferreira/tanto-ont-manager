@@ -32,6 +32,8 @@ public static class ErrorCodes
     public const string WriteOperationsDisabled = "SEC.WRITE_DISABLED";
     public const string SanitizationUnproven = "SEC.SANITIZATION_UNPROVEN";
     public const string AuthenticatedExportRequiresSession = "SEC.AUTH_EXPORT_REQUIRES_SESSION";
+    public const string AuthenticatedExportInspectionFailed = "SEC.AUTH_EXPORT_INSPECTION_FAILED";
+    public const string LogoutNotAllowlisted = "AUTH.LOGOUT_NOT_ALLOWLISTED";
     public const string OperationCancelled = "APP.CANCELLED";
     public const string PublicPageUnreadable = "DET.PUBLIC_PAGE_UNREADABLE";
     public const string IdentityRequiresAuthentication = "DET.IDENTITY_REQUIRES_AUTH";

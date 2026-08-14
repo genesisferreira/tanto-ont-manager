@@ -4,7 +4,7 @@
 
 | Fabricante | Modelo | Status | Observação |
 |---|---|---|---|
-| ZTE | ZXHN F6201B | Detecção pública + login somente leitura 0.1.2-lab | HTTPS `192.168.100.1`; autenticação no endpoint observado; GET autenticado allowlist |
+| ZTE | ZXHN F6201B | Detecção pública + leitura autenticada 0.1.3-lab | HTTPS `192.168.100.1`; GET SafeRead; logout oficial no clique |
 | ZTE | ZXHN F6600P | Estrutura apenas | Sem detector específico |
 | ZTE | ZXHN F670L | Estrutura apenas | Sem detector específico |
 | Zyxel | PM5301-T7 | Futuro | Sem adaptador |

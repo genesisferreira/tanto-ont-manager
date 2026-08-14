@@ -10,6 +10,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.DeviceAdapters.Zte.Auth;
+using TantoOntManager.Domain.Discovery;
 using TantoOntManager.Domain.Common;
 using TantoOntManager.Domain.Network;
 using TantoOntManager.Security.Export;
@@ -84,7 +85,15 @@ public sealed class BoundOntTransport : IBoundOntTransport
         }
     }
 
-    public int PostCount { get; private set; }
+    public int PostCount => LoginPostCount + LogoutPostCount;
+
+    public int LoginPostCount { get; private set; }
+
+    public int LogoutPostCount { get; private set; }
+
+    public int ConfigPostCount => 0;
+
+    public string? SessionToken { get; private set; }
 
     public IReadOnlyList<string> HttpMethodsUsed
     {
@@ -153,7 +162,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
                 "POST recusado: somente o endpoint de login homologado pode receber POST."));
         }
 
-        if (PostCount >= 1)
+        if (LoginPostCount >= 1)
         {
             return BoundHttpResult.Fail(Error.Create(
                 ErrorCodes.PostNotAllowed,
@@ -164,11 +173,54 @@ public sealed class BoundOntTransport : IBoundOntTransport
         return await SendAsync(HttpMethod.Post, uri, content, cancellationToken);
     }
 
+    public async Task<BoundHttpResult> PostLogoutFormAsync(
+        IReadOnlyDictionary<string, string> form,
+        CancellationToken cancellationToken)
+    {
+        if (!TryCreateUri(F6201BV9310P8N1AuthContract.LogoutPathAndQuery, out var uri, out var error))
+        {
+            return BoundHttpResult.Fail(error!);
+        }
+
+        if (!F6201BV9310P8N1AuthContract.IsLogoutPost(uri, BoundAddress))
+        {
+            return BoundHttpResult.Fail(Error.Create(
+                ErrorCodes.LogoutNotAllowlisted,
+                "POST recusado: somente o endpoint de logout observado na interface pode ser usado."));
+        }
+
+        if (LogoutPostCount >= 1)
+        {
+            return BoundHttpResult.Fail(Error.Create(
+                ErrorCodes.PostNotAllowed,
+                "POST recusado: o logout já foi enviado nesta sessão."));
+        }
+
+        var content = new FormUrlEncodedContent(form);
+        return await SendAsync(HttpMethod.Post, uri, content, cancellationToken);
+    }
+
+    public void RememberSafeRead(string type, string tag)
+    {
+        if (!F6201BV9310P8N1AuthContract.IsAllowedGetType(type)
+            || !F6201BV9310P8N1AuthContract.IsValidTag(tag)
+            || F6201BV9310P8N1AuthContract.IsDestructiveTag(tag)
+            || F6201BV9310P8N1AuthContract.IsAuthControlTag(tag))
+        {
+            return;
+        }
+
+        _discoveredTags.Add(F6201BV9310P8N1AuthContract.MakeKey(type, tag));
+    }
+
     public void RememberDiscoveredTags(string html)
     {
-        foreach (var tag in F6201BV9310P8N1AuthContract.DiscoverMenuTags(html))
+        foreach (var item in F6201BSafeReadDiscovery.Discover(html))
         {
-            _discoveredTags.Add(tag);
+            if (item.Classification == SafeReadClassification.SafeRead)
+            {
+                _discoveredTags.Add(item.TypeAndTag);
+            }
         }
     }
 
@@ -180,6 +232,8 @@ public sealed class BoundOntTransport : IBoundOntTransport
             {
                 cookie.Expired = true;
             }
+
+            SessionToken = null;
         }
     }
 
@@ -222,7 +276,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
         {
             Timeout = TimeSpan.FromSeconds(8)
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.2 (lab-readonly)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.3 (lab-readonly)");
         client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
 
         try
@@ -288,10 +342,18 @@ public sealed class BoundOntTransport : IBoundOntTransport
                 Record(method, current, isPost: method == HttpMethod.Post);
                 if (method == HttpMethod.Post)
                 {
-                    PostCount++;
+                    if (F6201BV9310P8N1AuthContract.IsLoginPost(current, BoundAddress))
+                    {
+                        LoginPostCount++;
+                    }
+                    else if (F6201BV9310P8N1AuthContract.IsLogoutPost(current, BoundAddress))
+                    {
+                        LogoutPostCount++;
+                    }
                 }
 
                 RememberDiscoveredTags(body);
+                CaptureSessionToken(body);
                 var hash = AuthenticatedPayloadSanitizer.Sha256Short(body);
                 _logger.LogInformation(
                     "HTTP autenticado method={Method} path={Path} status={Status} redirects={Redirects} hash={Hash} posts={Posts}",
@@ -447,6 +509,15 @@ public sealed class BoundOntTransport : IBoundOntTransport
         }
 
         return true;
+    }
+
+    private void CaptureSessionToken(string body)
+    {
+        var token = F6201BHtmlText.ReadSessionToken(body);
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            SessionToken = token;
+        }
     }
 
     private static async Task<string> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)

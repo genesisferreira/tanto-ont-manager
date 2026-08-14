@@ -1,0 +1,4 @@
+{"OBJ_WANIP_ID":[
+  {"WANCName":"HSI_TR069","ConnType":"PPPoE","ServList":"INTERNET,TR069","LinkType":"VLAN","IPVersion":"IPv4","IPType":"PPPoE","NATEnabled":"1","VLANID":"210","Priority":"0","ConnStatus":"Disconnected","DisconnectReason":"PADT","IPAddress":"100.64.10.25","MACAddress":"00:11:22:33:44:55","PPPPassword":"secret-lab","Username":"user@isp"},
+  {"WANCName":"VOIP_IPTV","ConnType":"IPoE","ServList":"VOIP,IPTV","LinkType":"VLAN","IPVersion":"IPv4","IPType":"DHCP","NATEnabled":"0","VLANID":"220","Priority":"5","ConnStatus":"Connected","IPAddress":"10.20.30.40","MACAddress":"00:11:22:33:44:66"}
+]}

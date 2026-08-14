@@ -7,6 +7,7 @@ using TantoOntManager.Application.Contracts;
 using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.Domain.Audit;
 using TantoOntManager.Domain.Common;
+using TantoOntManager.Domain.Export;
 using TantoOntManager.Infrastructure.DependencyInjection;
 using TantoOntManager.Security.Export;
 
@@ -33,7 +34,7 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
         _logger = logger;
     }
 
-    public Task<Result<string>> ExecuteAsync(
+    public Task<Result<AuthenticatedExportResult>> ExecuteAsync(
         ExportAuthenticatedDiagnosticCommand command,
         CancellationToken cancellationToken)
     {
@@ -41,7 +42,7 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
         var session = _sessionStore.DomainSession;
         if (snapshot is null || session is null || !session.IsAuthenticated)
         {
-            return Task.FromResult(Result.Failure<string>(Error.Create(
+            return Task.FromResult(Result.Failure<AuthenticatedExportResult>(Error.Create(
                 ErrorCodes.AuthenticatedExportRequiresSession,
                 "Exporte o diagnóstico autenticado somente depois de um login bem-sucedido.")));
         }
@@ -64,28 +65,53 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
             diagnostics.Pon.OnuState,
             Temperature = diagnostics.Optical.Temperature,
             TxPower = diagnostics.Optical.TxPower,
-            RxPower = diagnostics.Optical.RxPower
+            RxPower = diagnostics.Optical.RxPower,
+            Voltage = diagnostics.Optical.Voltage,
+            BiasCurrent = diagnostics.Optical.BiasCurrent
         }, JsonOptions);
 
         var wanJson = JsonSerializer.Serialize(diagnostics.WanProfiles.Select(profile => new
         {
             profile.Name,
             Type = profile.Mode ?? profile.LinkType,
-            Service = profile.ServiceList,
+            ServiceList = profile.ServiceList,
+            LinkType = profile.LinkType,
+            IpVersion = profile.AddressFamily,
+            IpType = profile.IpType,
+            Nat = profile.NatEnabled,
             Vlan = profile.VlanId,
-            Status = profile.ConnectionState
+            Priority8021p = profile.Priority8021p,
+            Status = profile.ConnectionState,
+            IpMasked = profile.Ipv4Address,
+            DisconnectReason = profile.DisconnectReason,
+            MacMasked = (string?)null
         }), JsonOptions);
 
-        var summary = BuildSummary(session.Endpoint.Address, snapshot, deviceJson, ponJson, wanJson);
-        var combined = deviceJson + ponJson + wanJson + summary;
+        var inventoryJson = JsonSerializer.Serialize(snapshot.Inventory.Select(item => new
+        {
+            item.Tag,
+            TypeAndTag = item.TypeAndTag,
+            Origem = item.EvidenceSource,
+            Metodo = item.Method,
+            ContentType = item.ContentType,
+            Tamanho = item.SizeBytes,
+            HashSanitizado = item.SanitizedHash,
+            Classificacao = item.Classification.ToString(),
+            Motivo = item.ClassificationReason,
+            FoiAcessada = item.WasAccessed
+        }), JsonOptions);
+
+        var summary = BuildSummary(session.Endpoint.Address, snapshot);
+        var combined = deviceJson + ponJson + wanJson + inventoryJson + summary;
         combined = AuthenticatedPayloadSanitizer.Sanitize(combined);
 
         if (AuthenticatedPayloadSanitizer.LooksUnsanitized(combined)
             || ContainsSecret(combined, command.Username, command.Password)
-            || ContainsFullIdentifier(combined, identity.SerialNumber, identity.MacAddress))
+            || ContainsFullIdentifier(combined, identity.SerialNumber, identity.MacAddress)
+            || ContainsPppoeSecret(combined))
         {
             _logger.LogWarning("Exportação autenticada cancelada: sanitização não comprovada.");
-            return Task.FromResult(Result.Failure<string>(Error.Create(
+            return Task.FromResult(Result.Failure<AuthenticatedExportResult>(Error.Create(
                 ErrorCodes.SanitizationUnproven,
                 "A exportação autenticada foi cancelada porque a sanitização não pôde ser comprovada.")));
         }
@@ -104,6 +130,11 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
             IncludesHtml = false,
             IncludesCookies = false,
             IncludesCredentials = false,
+            IncludesRawAuthenticatedHtml = false,
+            SensitiveIdentifiersMasked = true,
+            LoginPostCount = snapshot.LoginPostCount,
+            LogoutPostCount = snapshot.LogoutPostCount,
+            ConfigPostCount = snapshot.ConfigPostCount,
             PostCount = snapshot.PostCount,
             PagesRead = snapshot.PagesRead,
             HttpMethods = new[] { "GET", "POST" }
@@ -115,7 +146,17 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
             Write(zip, "device-information.json", AuthenticatedPayloadSanitizer.Sanitize(deviceJson));
             Write(zip, "pon-status.json", AuthenticatedPayloadSanitizer.Sanitize(ponJson));
             Write(zip, "wan-summary.json", AuthenticatedPayloadSanitizer.Sanitize(wanJson));
+            Write(zip, "safe-read-inventory.json", AuthenticatedPayloadSanitizer.Sanitize(inventoryJson));
             Write(zip, "authenticated-diagnostic-summary.txt", AuthenticatedPayloadSanitizer.Sanitize(summary));
+        }
+
+        var inspection = AuthenticatedZipInspector.Inspect(zipPath, identity.SerialNumber, identity.MacAddress);
+        if (!inspection.IsAcceptable)
+        {
+            File.Delete(zipPath);
+            return Task.FromResult(Result.Failure<AuthenticatedExportResult>(Error.Create(
+                ErrorCodes.AuthenticatedExportInspectionFailed,
+                "O ZIP autenticado foi recusado pela inspeção de sanitização e não foi concluído.")));
         }
 
         _audit.Record(AuditEvent.Create(
@@ -124,7 +165,7 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
             masked,
             $"zip={Path.GetFileName(zipPath)}; posts={snapshot.PostCount}; pages={snapshot.PagesRead.Count}"));
         _logger.LogInformation("Diagnóstico autenticado sanitizado exportado para {Path}", zipPath);
-        return Task.FromResult(Result.Success(zipPath));
+        return Task.FromResult(Result.Success(new AuthenticatedExportResult(zipPath, inspection)));
     }
 
     private static void Write(ZipArchive zip, string name, string content)
@@ -155,32 +196,35 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
         return !string.IsNullOrWhiteSpace(mac) && mac.Length >= 12 && text.Contains(mac, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool ContainsPppoeSecret(string text)
+        => RegexContains(text, "(?i)(pppoe\\s*(user(name)?|password)|pppPassword)");
+
+    private static bool RegexContains(string text, string pattern)
+        => System.Text.RegularExpressions.Regex.IsMatch(text, pattern);
+
     private static string MaskAddress(string address)
     {
         var parts = address.Split('.');
         return parts.Length == 4 ? $"{parts[0]}-{parts[1]}-{parts[2]}-x" : "ip-x";
     }
 
-    private static string BuildSummary(
-        IPAddress address,
-        Domain.Sessions.AuthenticatedReadSnapshot snapshot,
-        string deviceJson,
-        string ponJson,
-        string wanJson)
+    private static string BuildSummary(IPAddress address, Domain.Sessions.AuthenticatedReadSnapshot snapshot)
     {
         var builder = new StringBuilder();
         builder.AppendLine("Tanto ONT Manager — diagnóstico autenticado sanitizado");
         builder.AppendLine($"Versão: {ProductInfo.Version}");
         builder.AppendLine($"Alvo: {MaskAddress(address.ToString()).Replace('-', '.')}");
-        builder.AppendLine($"POSTs: {snapshot.PostCount}");
+        builder.AppendLine($"POST login: {snapshot.LoginPostCount}");
+        builder.AppendLine($"POST logout: {snapshot.LogoutPostCount}");
+        builder.AppendLine($"POST configuração: {snapshot.ConfigPostCount}");
         builder.AppendLine($"Páginas GET: {string.Join(", ", snapshot.PagesRead)}");
         builder.AppendLine($"Hash sanitizado: {snapshot.LastSanitizedHash}");
         builder.AppendLine("HTML bruto autenticado: não incluído");
         builder.AppendLine("Cookies: não incluídos");
-        builder.AppendLine();
-        builder.AppendLine(deviceJson);
-        builder.AppendLine(ponJson);
-        builder.AppendLine(wanJson);
+        builder.AppendLine($"IncludesCookies: false");
+        builder.AppendLine($"IncludesCredentials: false");
+        builder.AppendLine($"IncludesRawAuthenticatedHtml: false");
+        builder.AppendLine($"SensitiveIdentifiersMasked: true");
         return builder.ToString();
     }
 }

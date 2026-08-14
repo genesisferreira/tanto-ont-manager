@@ -11,8 +11,12 @@ public static class F6201BV9310P8N1AuthContract
     public const string ExpectedHardware = "V9.3.12";
     public const string LoginPathAndQuery = "/?_type=loginData&_tag=login_entry";
     public const string TokenPathAndQuery = "/?_type=loginData&_tag=login_token";
+    public const string LogoutPathAndQuery = "/?_type=loginData&_tag=logout_entry";
     public const string SessionCookieNamePrefix = "SID_HTTPS_";
     public const string XmlChallengeRoot = "ajax_response_xml_root";
+    public const int MaxSafeReadPages = 12;
+    public const int MaxTotalBodyBytes = 1_500_000;
+    public const int MaxTagLength = 80;
 
     public static readonly IReadOnlyList<string> RequiredPublicMarkers =
     [
@@ -25,25 +29,29 @@ public static class F6201BV9310P8N1AuthContract
         "g_loginToken"
     ];
 
-    private static readonly string[] DestructiveFragments =
+    public static readonly IReadOnlyList<string> AllowedGetTypes =
     [
-        "reboot", "reset", "factory", "firmware", "upgrade", "restore", "upload",
-        "download", "backup", "save", "apply", "delete", "create", "wizard",
-        "logout", "logoff", "chgpwd", "password", "accountmgr", "btn_apply",
-        "btn_delete"
+        "menuView",
+        "menuData",
+        "hiddenData"
     ];
 
-    private static readonly Regex MenuPage = new(
-        "MenuPage\\s*=\\s*['\"]([A-Za-z0-9_\\-]+)['\"]",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    public static readonly IReadOnlyList<string> AuthControlTags =
+    [
+        "login_entry",
+        "login_token",
+        "logout_entry",
+        "switchlang_entry",
+        "modeswitch_entry"
+    ];
 
-    private static readonly Regex TagQuery = new(
-        "_tag=([A-Za-z0-9_\\-]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex OpenLink = new(
-        "openLink\\(\\s*['\"]([A-Za-z0-9_\\-]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly string[] DestructiveFragments =
+    [
+        "apply", "save", "submit", "create", "delete", "remove", "reset", "reboot",
+        "upgrade", "upload", "restore", "factory", "firmware", "password", "account",
+        "write", "set", "modify", "download", "backup", "wizard", "logout", "logoff",
+        "chgpwd", "btn_apply", "btn_delete"
+    ];
 
     public static bool PublicPageMatchesContract(string? html)
     {
@@ -54,6 +62,10 @@ public static class F6201BV9310P8N1AuthContract
 
         return RequiredPublicMarkers.All(marker => html.Contains(marker, StringComparison.Ordinal));
     }
+
+    public static bool IsAuthControlTag(string? tag)
+        => !string.IsNullOrWhiteSpace(tag)
+           && AuthControlTags.Contains(tag, StringComparer.OrdinalIgnoreCase);
 
     public static bool IsDestructiveTag(string? tag)
     {
@@ -66,39 +78,24 @@ public static class F6201BV9310P8N1AuthContract
         return DestructiveFragments.Any(fragment => normalized.Contains(fragment, StringComparison.Ordinal));
     }
 
-    public static IReadOnlyList<string> DiscoverMenuTags(string? html)
+    public static bool IsValidTag(string? tag)
     {
-        if (string.IsNullOrWhiteSpace(html))
+        if (string.IsNullOrWhiteSpace(tag) || tag.Length > MaxTagLength)
         {
-            return [];
+            return false;
         }
 
-        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (Match match in MenuPage.Matches(html))
-        {
-            tags.Add(match.Groups[1].Value);
-        }
-
-        foreach (Match match in OpenLink.Matches(html))
-        {
-            tags.Add(match.Groups[1].Value);
-        }
-
-        foreach (Match match in TagQuery.Matches(html))
-        {
-            var tag = match.Groups[1].Value;
-            if (tag is "login_entry" or "login_token" or "logout_entry" or "switchlang_entry" or "modeswitch_entry")
-            {
-                continue;
-            }
-
-            tags.Add(tag);
-        }
-
-        return tags.ToList();
+        return Regex.IsMatch(tag, "^[A-Za-z][A-Za-z0-9_\\-]*$");
     }
 
-    public static bool IsAllowedGet(Uri uri, IPAddress boundAddress, IReadOnlyCollection<string> discoveredTags)
+    public static bool IsAllowedGetType(string? type)
+        => !string.IsNullOrWhiteSpace(type)
+           && AllowedGetTypes.Contains(type, StringComparer.OrdinalIgnoreCase);
+
+    public static string BuildGetPath(string type, string tag)
+        => $"/?_type={type}&_tag={tag}";
+
+    public static bool IsAllowedGet(Uri uri, IPAddress boundAddress, IReadOnlyCollection<string> discoveredKeys)
     {
         if (uri.Scheme is not ("http" or "https"))
         {
@@ -131,33 +128,27 @@ public static class F6201BV9310P8N1AuthContract
             return true;
         }
 
-        if (string.Equals(type, "menuView", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(tag)
-            && !IsDestructiveTag(tag)
-            && discoveredTags.Any(item => item.Equals(tag, StringComparison.OrdinalIgnoreCase))
-            && query.Keys.All(key => key is "_type" or "_tag" or "Menu3Location"))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    public static bool IsLoginPost(Uri uri, IPAddress boundAddress)
-    {
-        if (!uri.Host.Equals(boundAddress.ToString(), StringComparison.OrdinalIgnoreCase)
-            || uri.AbsolutePath is not "/")
+        if (!IsAllowedGetType(type)
+            || !IsValidTag(tag)
+            || IsDestructiveTag(tag)
+            || IsAuthControlTag(tag)
+            || !query.Keys.All(key => key is "_type" or "_tag" or "Menu3Location"))
         {
             return false;
         }
 
-        var query = ParseQuery(uri.Query);
-        return query.Count == 2
-               && query.TryGetValue("_type", out var type)
-               && query.TryGetValue("_tag", out var tag)
-               && string.Equals(type, "loginData", StringComparison.OrdinalIgnoreCase)
-               && string.Equals(tag, "login_entry", StringComparison.OrdinalIgnoreCase);
+        var key = MakeKey(type!, tag!);
+        return discoveredKeys.Any(item => item.Equals(key, StringComparison.OrdinalIgnoreCase));
     }
+
+    public static bool IsLoginPost(Uri uri, IPAddress boundAddress)
+        => IsTypedLoginDataPost(uri, boundAddress, "login_entry");
+
+    public static bool IsLogoutPost(Uri uri, IPAddress boundAddress)
+        => IsTypedLoginDataPost(uri, boundAddress, "logout_entry");
+
+    public static string MakeKey(string type, string tag)
+        => $"{type}:{tag}";
 
     public static string MaskUri(Uri uri)
     {
@@ -180,7 +171,7 @@ public static class F6201BV9310P8N1AuthContract
         return uri.AbsolutePath + "?" + string.Join('&', safe);
     }
 
-    private static Dictionary<string, string> ParseQuery(string query)
+    public static Dictionary<string, string> ParseQuery(string query)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(query))
@@ -201,5 +192,21 @@ public static class F6201BV9310P8N1AuthContract
         }
 
         return result;
+    }
+
+    private static bool IsTypedLoginDataPost(Uri uri, IPAddress boundAddress, string expectedTag)
+    {
+        if (!uri.Host.Equals(boundAddress.ToString(), StringComparison.OrdinalIgnoreCase)
+            || uri.AbsolutePath is not "/")
+        {
+            return false;
+        }
+
+        var query = ParseQuery(uri.Query);
+        return query.Count == 2
+               && query.TryGetValue("_type", out var type)
+               && query.TryGetValue("_tag", out var tag)
+               && string.Equals(type, "loginData", StringComparison.OrdinalIgnoreCase)
+               && string.Equals(tag, expectedTag, StringComparison.OrdinalIgnoreCase);
     }
 }

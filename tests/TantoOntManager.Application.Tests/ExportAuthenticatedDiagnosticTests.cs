@@ -38,8 +38,8 @@ public sealed class ExportAuthenticatedDiagnosticTests
                     "AABBCCDDEEFF"),
                 new DeviceDiagnostics(
                     new PonState("O1", null),
-                    new OpticalReading("41", "2.1", "-18"),
-                    [new WanProfile("HSI_TR069", "PPPoE", "INTERNET", null, null, null, null, 210, null, "Disconnected", null, null)],
+                    new OpticalReading("41", "2.1", "-18", "3.3", "12"),
+                    [new WanProfile("HSI_TR069", "PPPoE", "INTERNET", null, null, null, null, 210, null, "Disconnected", null, "100.64.x.x")],
                     null,
                     false,
                     "ok"),
@@ -49,7 +49,12 @@ public sealed class ExportAuthenticatedDiagnosticTests
                 "200",
                 "abcd1234",
                 TimeSpan.FromMilliseconds(50),
-                "zte-f6201b-v9.3.10p8n1-auth-v1")
+                "zte-f6201b-v9.3.10p8n1-auth-v1",
+                [],
+                [],
+                1,
+                0,
+                0)
         };
 
         var useCase = new ExportAuthenticatedDiagnosticUseCase(
@@ -61,12 +66,13 @@ public sealed class ExportAuthenticatedDiagnosticTests
         var result = await useCase.ExecuteAsync(new ExportAuthenticatedDiagnosticCommand("lab-user", "lab-pass"), CancellationToken.None);
         result.IsSuccess.Should().BeTrue();
 
-        using var zip = ZipFile.OpenRead(result.Value!);
+        using var zip = ZipFile.OpenRead(result.Value!.ZipPath);
         zip.Entries.Select(entry => entry.Name).Should().BeEquivalentTo(
             "manifest.json",
             "device-information.json",
             "pon-status.json",
             "wan-summary.json",
+            "safe-read-inventory.json",
             "authenticated-diagnostic-summary.txt");
 
         var combined = string.Join(Environment.NewLine, zip.Entries.Select(Read));
@@ -75,7 +81,13 @@ public sealed class ExportAuthenticatedDiagnosticTests
         combined.Should().NotContain("lab-pass");
         combined.Should().NotContain("<html");
         combined.Should().NotContain("Set-Cookie");
+        combined.Should().NotContain("pppoeuser");
         combined.Should().Contain("ABC******456");
+
+        result.Value!.Inspection.IncludesCookies.Should().BeFalse();
+        result.Value.Inspection.IncludesCredentials.Should().BeFalse();
+        result.Value.Inspection.IncludesRawAuthenticatedHtml.Should().BeFalse();
+        result.Value.Inspection.SensitiveIdentifiersMasked.Should().BeTrue();
     }
 
     [Fact]

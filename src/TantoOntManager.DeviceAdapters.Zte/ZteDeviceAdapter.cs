@@ -139,7 +139,7 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter
             WriteOperationsSupportedByAdapter: false,
             Notes:
             [
-                "Fase 0.1.2-lab: detecção pública e autenticação autorizada somente leitura da F6201B V9.3.10P8N1.",
+                "Fase 0.1.3-lab: detecção pública e leitura autenticada completa da F6201B V9.3.10P8N1.",
                 "WAN, VLAN, PPPoE e TR-069 não são gravados.",
                 "F6600P e F670L têm estrutura preparada, sem detector específico nesta entrega.",
                 "Gravação desativada por padrão e sem contrato homologado."

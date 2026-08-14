@@ -10,7 +10,9 @@ public sealed record PonState(
 public sealed record OpticalReading(
     string? Temperature,
     string? TxPower,
-    string? RxPower)
+    string? RxPower,
+    string? Voltage = null,
+    string? BiasCurrent = null)
 {
     public static OpticalReading Unavailable { get; } = new(null, null, null);
 }

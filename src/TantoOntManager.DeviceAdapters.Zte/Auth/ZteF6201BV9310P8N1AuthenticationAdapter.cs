@@ -191,7 +191,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                 return TransportFail(authenticatedHome, started.Elapsed, transport);
             }
 
-            if (F6201BV9310P8N1AuthenticatedPageParser.LooksLikeSessionExpired(authenticatedHome.Body))
+            if (F6201BHtmlText.LooksLikeSessionExpired(authenticatedHome.Body))
             {
                 return Fail(
                     AuthSessionState.SessionExpired,
@@ -202,35 +202,32 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                     authenticatedHome);
             }
 
-            var pages = new List<string> { authenticatedHome.Body };
-            var pageNames = new List<string> { "/" };
-            var tags = F6201BV9310P8N1AuthContract.DiscoverMenuTags(authenticatedHome.Body)
-                .Where(tag => !F6201BV9310P8N1AuthContract.IsDestructiveTag(tag))
-                .Take(8)
-                .ToList();
+            var read = await F6201BAuthenticatedSafeReader.ReadAsync(
+                transport,
+                authenticatedHome.Body,
+                "/",
+                authenticatedHome,
+                cancellationToken);
 
-            foreach (var tag in tags)
+            if (read.SessionExpired && read.Pages.Count <= 1)
             {
-                var path = "/?_type=menuView&_tag=" + tag;
-                var page = await transport.GetAsync(path, cancellationToken);
-                if (!page.Succeeded)
-                {
-                    if (page.Error?.Code is ErrorCodes.GetNotAllowlisted or ErrorCodes.DestructivePageBlocked)
-                    {
-                        continue;
-                    }
-
-                    return TransportFail(page, started.Elapsed, transport);
-                }
-
-                pages.Add(page.Body);
-                pageNames.Add(path);
+                return Fail(
+                    AuthSessionState.SessionExpired,
+                    ErrorCodes.SessionExpired,
+                    "A sessão autenticada expirou durante a leitura GET.",
+                    started.Elapsed,
+                    transport,
+                    authenticatedHome);
             }
 
-            var identity = F6201BV9310P8N1AuthenticatedPageParser.ParseIdentity(
+            var pageBodies = read.Pages.ToArray();
+            var device = F6201BV9310P8N1DeviceInformationParser.Parse(pageBodies);
+            var pon = F6201BV9310P8N1PonParser.Parse(pageBodies);
+            var wan = F6201BV9310P8N1WanParser.Parse(pageBodies);
+            var identity = F6201BV9310P8N1AuthenticatedPageParser.ToIdentity(
                 ManufacturerNames.Zte,
                 DeviceModelIds.ZteF6201B,
-                [.. pages]);
+                device);
 
             if (!F6201BV9310P8N1AuthenticatedPageParser.FirmwareMatchesWhenPresent(identity))
             {
@@ -243,17 +240,23 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                     authenticatedHome);
             }
 
-            var diagnostics = F6201BV9310P8N1AuthenticatedPageParser.ParseDiagnostics([.. pages]);
+            var diagnostics = F6201BV9310P8N1AuthenticatedPageParser.ToDiagnostics(pon, wan);
+            var evidence = device.Evidence.Concat(pon.Evidence).Concat(wan.Evidence).ToList();
             var snapshot = new AuthenticatedReadSnapshot(
                 identity,
                 diagnostics,
-                pageNames,
+                read.PageNames,
                 transport.PostCount,
                 authenticatedHome.RedirectCount,
                 post.StatusCode.ToString(),
                 authenticatedHome.SanitizedBodySha256,
                 started.Elapsed,
-                AdapterId);
+                AdapterId,
+                read.Inventory,
+                evidence,
+                transport.LoginPostCount,
+                transport.LogoutPostCount,
+                transport.ConfigPostCount);
 
             var session = AuthorizedDeviceSession.Authenticated(
                 endpoint,
@@ -268,7 +271,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                 post.StatusCode,
                 snapshot.PostCount,
                 post.RedirectCount,
-                pageNames.Count,
+                read.PageNames.Count,
                 started.Elapsed,
                 snapshot.LastSanitizedHash);
 

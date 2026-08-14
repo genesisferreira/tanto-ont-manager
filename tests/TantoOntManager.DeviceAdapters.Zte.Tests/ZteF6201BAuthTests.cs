@@ -72,6 +72,13 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         transport.Gets.Should().NotContain(uri => uri.Contains("reboot"));
         store.Snapshot.Should().NotBeNull();
         store.Snapshot!.Identity.Firmware.SoftwareVersion.Should().Be("V9.3.10P8N1");
+        store.Snapshot.LoginPostCount.Should().Be(1);
+        store.Snapshot.ConfigPostCount.Should().Be(0);
+        store.Snapshot.LogoutPostCount.Should().Be(0);
+        transport.Gets.Should().NotContain(uri => uri.Contains("reboot"));
+        transport.Gets.Should().NotContain(uri => uri.Contains("account"));
+        transport.Gets.Should().NotContain(uri => uri.Contains("192.168.1.1"));
+        transport.Posts.Should().HaveCount(1);
         store.Transport!.HasSessionCookie.Should().BeTrue();
         result.PagesRead.Should().NotBeEmpty();
     }
@@ -154,7 +161,9 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
     {
         F6201BV9310P8N1AuthContract.IsDestructiveTag("reboot").Should().BeTrue();
         F6201BV9310P8N1AuthContract.IsDestructiveTag("factoryReset").Should().BeTrue();
-        F6201BV9310P8N1AuthContract.IsDestructiveTag("devinfo").Should().BeFalse();
+        F6201BV9310P8N1AuthContract.IsDestructiveTag("accountMgr").Should().BeTrue();
+        F6201BV9310P8N1AuthContract.IsDestructiveTag("wan_apply").Should().BeTrue();
+        F6201BV9310P8N1AuthContract.IsDestructiveTag("wanModify").Should().BeTrue();
     }
 
     [Fact]
@@ -204,7 +213,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         return new FakeTransport
         {
             PublicHtml = html,
-            AuthenticatedHtml = html + "<a MenuPage='devinfo'>Device Information</a><a MenuPage='reboot'>Reboot</a>",
+            AuthenticatedHtml = html + "<a MenuPage='devinfo'>Device Information</a><a MenuPage='reboot'>Reboot</a><script>var menuTreeJSON = [{\"id\":\"homePage\",\"name\":\"Home\",\"area\":[{\"area\":\"home_t.lp\"}]},{\"id\":\"internet\",\"name\":\"Internet\",\"children\":[{\"id\":\"ponInfo\",\"name\":\"PON Information\"},{\"id\":\"ethWanStatus\",\"name\":\"WAN Status\"}]}]; var _sessionTmpToken = \"tok2\";</script>",
             DeviceHtml = "Hardware Version: V9.3.12 Software Version: V9.3.10P8N1 Boot Version: V9.3.10P10N6 ONU State: O1 Temperature: 41 Tx Power: 2.1 Rx Power: -18.0 WAN Name: HSI_TR069 VLAN: 210 Status: Disconnected Service: INTERNET_TR069"
         };
     }
@@ -264,14 +273,22 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         public string? ObservedCertificateSha256 { get; private set; }
         public bool HasSessionCookie => _cookie;
         public int PostCount => Posts.Count;
+        public int LoginPostCount => Posts.Count(item => item.Contains("login_entry"));
+        public int LogoutPostCount => Posts.Count(item => item.Contains("logout_entry"));
+        public int ConfigPostCount => 0;
+        public string? SessionToken { get; private set; } = "tok";
         public IReadOnlyList<string> HttpMethodsUsed => Gets.Select(_ => "GET").Concat(Posts.Select(_ => "POST")).ToList();
         public IReadOnlyList<string> MaskedGetPages => Gets;
         public IReadOnlyList<string> MaskedPosts => Posts;
+        public string LogoutBody { get; set; } = """{"need_refresh":true}""";
+        public bool LogoutTimesOut { get; set; }
+        public bool LogoutFails { get; set; }
 
         public Task<BoundHttpResult> GetAsync(string pathAndQuery, CancellationToken cancellationToken)
         {
             Gets.Add(pathAndQuery);
-            if (pathAndQuery.Contains("reboot", StringComparison.OrdinalIgnoreCase))
+            if (pathAndQuery.Contains("reboot", StringComparison.OrdinalIgnoreCase)
+                || pathAndQuery.Contains("account", StringComparison.OrdinalIgnoreCase))
             {
                 return Task.FromResult(BoundHttpResult.Fail(Error.Create(ErrorCodes.GetNotAllowlisted, "bloqueado")));
             }
@@ -285,7 +302,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
             {
                 body = ChallengeXml;
             }
-            else if (pathAndQuery.Contains("devinfo"))
+            else if (pathAndQuery.Contains("devinfo") || pathAndQuery.Contains("homePage") || pathAndQuery.Contains("pon") || pathAndQuery.Contains("wan"))
             {
                 body = DeviceHtml;
             }
@@ -308,14 +325,45 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
             Posts.Add("/?_type=loginData&_tag=login_entry");
             _loggedIn = PostBody.Contains("login_need_refresh\":true", StringComparison.Ordinal);
             _cookie = _loggedIn;
+            SessionToken = "tok2";
             return Task.FromResult(Ok(PostBody, "/?_type=loginData&_tag=login_entry"));
         }
 
-        public void ClearCookiesAndState() => _cookie = false;
+        public Task<BoundHttpResult> PostLogoutFormAsync(IReadOnlyDictionary<string, string> form, CancellationToken cancellationToken)
+        {
+            form.Should().ContainKey("IF_LogOff");
+            form["IF_LogOff"].Should().Be("1");
+            form.Should().ContainKey("_sessionTOKEN");
+            if (LogoutTimesOut)
+            {
+                return Task.FromResult(BoundHttpResult.Fail(Error.Create(ErrorCodes.ProbeTimeout, "timeout")));
+            }
+
+            Posts.Add("/?_type=loginData&_tag=logout_entry");
+            if (LogoutFails)
+            {
+                return Task.FromResult(Ok("""{"need_refresh":false,"loginErrMsg":"This page has expired, please refresh and try again."}""", "/?_type=loginData&_tag=logout_entry"));
+            }
+
+            return Task.FromResult(Ok(LogoutBody, "/?_type=loginData&_tag=logout_entry"));
+        }
+
+        public void RememberSafeRead(string type, string tag)
+        {
+        }
+
+        public void ClearCookiesAndState()
+        {
+            _cookie = false;
+            SessionToken = null;
+        }
 
         public void Dispose() => ClearCookiesAndState();
 
         private static BoundHttpResult Ok(string body, string uri)
-            => new(true, 200, body, "application/json", "https://192.168.100.1" + uri, 0, "abcd1234", TimeSpan.FromMilliseconds(5), null);
+        {
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(body))).ToLowerInvariant()[..8];
+            return new(true, 200, body, "text/html", "https://192.168.100.1" + uri, 0, hash, TimeSpan.FromMilliseconds(5), null);
+        }
     }
 }

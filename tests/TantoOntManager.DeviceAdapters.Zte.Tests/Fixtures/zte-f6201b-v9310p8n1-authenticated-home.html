@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><title>F6201B</title></head>
+<body>
+<script>
+var menuTreeJSON = [
+  {"id":"homePage","name":"Home","area":[{"area":"home_t.lp"}]},
+  {"id":"internet","name":"Internet","children":[
+    {"id":"ponInfo","name":"PON Information"},
+    {"id":"ethWanStatus","name":"WAN Status"},
+    {"id":"wanModify","name":"WAN Modify"}
+  ]},
+  {"id":"mgrAndDiag","name":"Management","children":[
+    {"id":"devinfo","name":"Device Information"},
+    {"id":"accountMgr","name":"Account"},
+    {"id":"reboot","name":"Reboot"}
+  ]}
+];
+function openLink(pageurl) { var PageName = "/?_type=menuView&_tag=" + pageurl; }
+var hidden = "/?_type=hiddenData&_tag=sntp_data";
+var extra = "/?_type=hiddenData&_tag=accessdev_data&DeveiceType=PC";
+var apply = "/?_type=menuView&_tag=wan_apply";
+</script>
+<p MenuPage="devinfo">Device Information</p>
+<p MenuPage="ponInfo">PON</p>
+<p MenuPage="ethWanStatus">WAN</p>
+<p MenuPage="reboot">Reboot</p>
+</body>
+</html>

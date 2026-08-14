@@ -49,6 +49,22 @@ public static class SensitiveDataMasker
         return $"{hex[..2]}:**:**:**:**:{hex[^2..]}";
     }
 
+    public static string MaskIpv4(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return "—";
+        }
+
+        var parts = address.Trim().Split('.');
+        if (parts.Length != 4)
+        {
+            return MaskSerial(address);
+        }
+
+        return $"{parts[0]}.{parts[1]}.x.x";
+    }
+
     public static string MaskUsername(string? username)
     {
         if (string.IsNullOrWhiteSpace(username))

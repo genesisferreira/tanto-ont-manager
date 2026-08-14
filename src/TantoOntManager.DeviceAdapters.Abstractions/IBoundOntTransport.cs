@@ -29,6 +29,14 @@ public interface IBoundOntTransport : IDisposable
 
     int PostCount { get; }
 
+    int LoginPostCount { get; }
+
+    int LogoutPostCount { get; }
+
+    int ConfigPostCount { get; }
+
+    string? SessionToken { get; }
+
     IReadOnlyList<string> HttpMethodsUsed { get; }
 
     IReadOnlyList<string> MaskedGetPages { get; }
@@ -40,6 +48,12 @@ public interface IBoundOntTransport : IDisposable
     Task<BoundHttpResult> PostLoginFormAsync(
         IReadOnlyDictionary<string, string> form,
         CancellationToken cancellationToken);
+
+    Task<BoundHttpResult> PostLogoutFormAsync(
+        IReadOnlyDictionary<string, string> form,
+        CancellationToken cancellationToken);
+
+    void RememberSafeRead(string type, string tag);
 
     void ClearCookiesAndState();
 }

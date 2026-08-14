@@ -66,6 +66,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITestConnectionUseCase, TestConnectionUseCase>();
         services.AddSingleton<IListEthernetAdaptersUseCase, ListEthernetAdaptersUseCase>();
         services.AddSingleton<IAuthenticateDeviceUseCase, AuthenticateDeviceUseCase>();
+        services.AddSingleton<IEndAuthenticatedSessionUseCase, EndAuthenticatedSessionUseCase>();
         services.AddSingleton<IExportPublicDiagnosticUseCase, ExportPublicDiagnosticUseCase>();
         services.AddSingleton<IExportAuthenticatedDiagnosticUseCase, ExportAuthenticatedDiagnosticUseCase>();
         services.AddSingleton<IBatchProcessingOrchestrator, DisabledBatchProcessingOrchestrator>();

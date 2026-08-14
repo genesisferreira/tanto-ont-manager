@@ -15,6 +15,54 @@ public sealed class BoundOntTransportTests
     private readonly IPAddress _ip = IPAddress.Parse("192.168.100.1");
 
     [Fact]
+    public async Task Logout_post_is_allowed_once_after_login()
+    {
+        var handler = new ScriptedHandler();
+        MapDefaults(handler);
+        handler.PostMap["https://192.168.100.1/?_type=loginData&_tag=logout_entry"] = Json(
+            """{"need_refresh":true}""",
+            setCookie: false);
+        var transport = Create(handler);
+        await transport.GetAsync("/", CancellationToken.None);
+        await transport.PostLoginFormAsync(LoginForm(), CancellationToken.None);
+        var first = await transport.PostLogoutFormAsync(new Dictionary<string, string>
+        {
+            ["IF_LogOff"] = "1",
+            ["_sessionTOKEN"] = "tok"
+        }, CancellationToken.None);
+        var second = await transport.PostLogoutFormAsync(new Dictionary<string, string>
+        {
+            ["IF_LogOff"] = "1",
+            ["_sessionTOKEN"] = "tok"
+        }, CancellationToken.None);
+
+        first.Succeeded.Should().BeTrue();
+        second.Succeeded.Should().BeFalse();
+        handler.Posts.Should().HaveCount(2);
+        handler.Posts[0].Should().Contain("login_entry");
+        handler.Posts[1].Should().Contain("logout_entry");
+        transport.LoginPostCount.Should().Be(1);
+        transport.LogoutPostCount.Should().Be(1);
+        transport.ConfigPostCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Hidden_data_is_allowlisted_only_when_discovered()
+    {
+        var handler = new ScriptedHandler();
+        MapDefaults(handler);
+        handler.Map["https://192.168.100.1/"] = Html("<script>var x=\"/?_type=hiddenData&_tag=sntp_data\";</script>");
+        handler.Map["https://192.168.100.1/?_type=hiddenData&_tag=sntp_data"] = Html("time");
+        var transport = Create(handler);
+        await transport.GetAsync("/", CancellationToken.None);
+        var allowed = await transport.GetAsync("/?_type=hiddenData&_tag=sntp_data", CancellationToken.None);
+        var unknown = await transport.GetAsync("/?_type=hiddenData&_tag=unknown_data", CancellationToken.None);
+        allowed.Succeeded.Should().BeTrue();
+        unknown.Succeeded.Should().BeFalse();
+        unknown.Error!.Code.Should().Be(ErrorCodes.GetNotAllowlisted);
+    }
+
+    [Fact]
     public async Task Login_post_is_only_allowed_endpoint_and_happens_once()
     {
         var handler = new ScriptedHandler();
