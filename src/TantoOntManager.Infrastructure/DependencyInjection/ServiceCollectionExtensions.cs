@@ -8,6 +8,7 @@ using TantoOntManager.Application.Contracts;
 using TantoOntManager.Application.UseCases;
 using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.DeviceAdapters.Zte;
+using TantoOntManager.Infrastructure.Export;
 using TantoOntManager.Infrastructure.Logging;
 using TantoOntManager.Infrastructure.Security;
 using TantoOntManager.Networking.Discovery;
@@ -21,9 +22,11 @@ namespace TantoOntManager.Infrastructure.DependencyInjection;
 [SupportedOSPlatform("windows")]
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddTantoOntManager(this IServiceCollection services, string logDirectory)
+    public static IServiceCollection AddTantoOntManager(this IServiceCollection services, string rootDirectory)
     {
-        Directory.CreateDirectory(logDirectory);
+        var paths = new LoggingPaths(rootDirectory);
+        Directory.CreateDirectory(paths.LogDirectory);
+        Directory.CreateDirectory(paths.DiagnosticsDirectory);
 
         var serilog = new LoggerConfiguration()
             .MinimumLevel.Information()
@@ -31,7 +34,7 @@ public static class ServiceCollectionExtensions
             .Enrich.With(new SensitiveDataEnricher())
             .Destructure.With(new SensitiveDataDestructuringPolicy())
             .WriteTo.File(
-                path: Path.Combine(logDirectory, "tanto-ont-manager-.log"),
+                path: Path.Combine(paths.LogDirectory, "tanto-ont-manager-.log"),
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 14,
                 shared: true,
@@ -46,6 +49,7 @@ public static class ServiceCollectionExtensions
 
         services.AddHttpClient();
         services.AddSingleton(new ProbeSessionSettings());
+        services.AddSingleton<IPublicProbeCache, PublicProbeCache>();
         services.AddSingleton<LogSanitizer>();
         services.AddSingleton<DpapiSecretProtector>();
         services.AddSingleton<ISecureCredentialStore, NonPersistentCredentialStore>();
@@ -60,15 +64,20 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITestConnectionUseCase, TestConnectionUseCase>();
         services.AddSingleton<IListEthernetAdaptersUseCase, ListEthernetAdaptersUseCase>();
         services.AddSingleton<IAuthenticateDeviceUseCase, AuthenticateDeviceUseCase>();
+        services.AddSingleton<IExportPublicDiagnosticUseCase, ExportPublicDiagnosticUseCase>();
         services.AddSingleton<IBatchProcessingOrchestrator, DisabledBatchProcessingOrchestrator>();
         services.AddSingleton<IBatchWorkOrderReader, UnsupportedBatchWorkOrderReader>();
-        services.AddSingleton(new LoggingPaths(logDirectory));
+        services.AddSingleton(paths);
 
         return services;
     }
 }
 
-public sealed record LoggingPaths(string Directory)
+public sealed record LoggingPaths(string RootDirectory)
 {
-    public string CurrentHint => Path.Combine(Directory, "tanto-ont-manager-.log");
+    public string LogDirectory => Path.Combine(RootDirectory, "logs");
+
+    public string DiagnosticsDirectory => Path.Combine(RootDirectory, "diagnostics");
+
+    public string CurrentHint => Path.Combine(LogDirectory, "tanto-ont-manager-.log");
 }

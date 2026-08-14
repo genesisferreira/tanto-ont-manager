@@ -151,7 +151,34 @@
             <TextBlock Text="Perfis WAN encontrados" Foreground="{StaticResource MutedBrush}" FontSize="11" />
             <TextBlock Text="{Binding WanProfiles}" TextWrapping="Wrap" Margin="0,0,0,10" />
             <TextBlock Text="Capacidades detectadas" Foreground="{StaticResource MutedBrush}" FontSize="11" />
-            <TextBlock Text="{Binding Capabilities}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Capabilities}" TextWrapping="Wrap" Margin="0,0,0,12" />
+            <UniformGrid Columns="2">
+              <StackPanel Margin="0,0,12,8">
+                <TextBlock Text="Status HTTP/HTTPS" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding HttpStatus}" FontWeight="SemiBold" />
+              </StackPanel>
+              <StackPanel Margin="0,0,0,8">
+                <TextBlock Text="Título público" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding PublicTitle}" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Margin="0,0,12,8">
+                <TextBlock Text="Tamanho da resposta" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding ResponseSize}" />
+              </StackPanel>
+              <StackPanel Margin="0,0,0,8">
+                <TextBlock Text="Hash curto" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding ShortHash}" />
+              </StackPanel>
+            </UniformGrid>
+            <TextBlock Text="Confiança da detecção" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+            <TextBlock Text="{Binding ConfidenceLabel}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8" />
+            <TextBlock Text="Evidências encontradas" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+            <TextBlock Text="{Binding EvidenceText}" TextWrapping="Wrap" Margin="0,0,0,10" />
+            <Button Content="Exportar diagnóstico público" Command="{Binding ExportCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+            <TextBlock Text="{Binding ExportPath}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8" />
+            <Expander Header="Detalhes do probe sanitizado" IsExpanded="{Binding DetailsExpanded}" Foreground="{StaticResource TextBrush}">
+              <TextBlock Text="{Binding ProbeDetails}" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="12" />
+            </Expander>
           </StackPanel>
         </Border>
 
@@ -159,11 +186,11 @@
           <StackPanel>
             <TextBlock Style="{StaticResource SectionTitle}" Text="Segurança" />
             <TextBlock Text="Usuário" Foreground="{StaticResource MutedBrush}" />
-            <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" />
+            <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,8" IsEnabled="{Binding IsAuthenticationMapped}" />
             <TextBlock Text="Senha" Foreground="{StaticResource MutedBrush}" />
-            <PasswordBox x:Name="PasswordInput" PasswordChanged="OnPasswordChanged" Margin="0,4,0,8" />
-            <CheckBox IsChecked="{Binding DoNotPersistCredential}" Content="Não persistir a credencial" Margin="0,0,0,8" />
-            <Button Content="Login" Command="{Binding LoginCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" />
+            <PasswordBox x:Name="PasswordInput" PasswordChanged="OnPasswordChanged" Margin="0,4,0,8" IsEnabled="{Binding IsAuthenticationMapped}" />
+            <CheckBox IsChecked="{Binding DoNotPersistCredential}" Content="Não persistir a credencial" Margin="0,0,0,8" IsEnabled="{Binding IsAuthenticationMapped}" />
+            <Button Content="Login" Command="{Binding LoginCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" IsEnabled="{Binding IsAuthenticationMapped}" />
             <TextBlock Text="{Binding AuthMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
           </StackPanel>
         </Border>

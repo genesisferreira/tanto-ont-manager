@@ -1,3 +1,4 @@
+using TantoOntManager.Domain.Detection;
 using TantoOntManager.Domain.Network;
 
 namespace TantoOntManager.Domain.Devices;
@@ -10,10 +11,5 @@ public sealed record DetectedDevice(
     IReadOnlyList<string> Evidence,
     bool RequiresAuthenticationForDetails)
 {
-    public string ConfidenceDisplay => Confidence switch
-    {
-        >= 0.85 => "Alta",
-        >= 0.55 => "Média",
-        _ => "Baixa"
-    };
+    public string ConfidenceDisplay => DetectionConfidenceDisplay.FromScore(Confidence, false).ToUiLabel();
 }

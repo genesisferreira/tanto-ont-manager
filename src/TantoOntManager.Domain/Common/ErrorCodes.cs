@@ -12,6 +12,8 @@ public static class ErrorCodes
     public const string TlsSelfSignedNotAccepted = "NET.TLS_SELF_SIGNED_NOT_ACCEPTED";
     public const string HttpProbeFailed = "NET.HTTP_PROBE_FAILED";
     public const string InsufficientEvidence = "DET.INSUFFICIENT_EVIDENCE";
+    public const string ConflictingEvidence = "DET.CONFLICTING_EVIDENCE";
+    public const string ExportBlockedSecret = "SEC.EXPORT_BLOCKED_SECRET";
     public const string AdapterNotApplicable = "DET.ADAPTER_NOT_APPLICABLE";
     public const string AuthenticationMethodNotMapped = "AUTH.METHOD_NOT_MAPPED";
     public const string AuthenticationNotAttempted = "AUTH.NOT_ATTEMPTED";

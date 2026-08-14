@@ -14,7 +14,11 @@ public sealed record ConnectivityProbeResult(
     string? BodySnippet,
     string? TlsNote,
     TimeSpan Duration,
-    string? ErrorMessage)
+    string? ErrorMessage,
+    HttpPublicObservation? HttpsObservation = null,
+    HttpPublicObservation? HttpObservation = null)
 {
     public bool AnyHttpReachable => HttpsReachable || HttpReachable;
+
+    public HttpPublicObservation? PrimaryObservation => HttpsReachable ? HttpsObservation : HttpObservation;
 }

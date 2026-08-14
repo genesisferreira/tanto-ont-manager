@@ -4,7 +4,7 @@
 
 | Fabricante | Modelo | Status | Observação |
 |---|---|---|---|
-| ZTE | ZXHN F6201B | Detecção pública inicial | IP de laboratório `192.168.100.1`, HTTPS, certificado self-signed |
+| ZTE | ZXHN F6201B | Detecção pública 0.1.1-lab | Homologado em laboratório: HTTPS `192.168.100.1`, título `F6201B`, texto `Welcome to F6201B`, `ZTE Corporation` |
 | ZTE | ZXHN F6600P | Estrutura apenas | Sem detector específico |
 | ZTE | ZXHN F670L | Estrutura apenas | Sem detector específico |
 | Zyxel | PM5301-T7 | Futuro | Sem adaptador |

@@ -46,12 +46,25 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter, IOntAuthenticationAdap
         }
 
         var analysis = ZtePublicPageAnalyzer.Analyze(document.Title, document.ServerHeader, document.Body);
-        if (!analysis.LooksLikeZte || analysis.Confidence < 0.55 || analysis.Model is null)
+        if (analysis.HasConflict)
+        {
+            _logger.LogInformation("Probe ZTE com evidências conflitantes em {Endpoint}", endpoint);
+            return AdapterProbeResult.NoMatch(
+                AdapterId,
+                endpoint,
+                Error.Create(ErrorCodes.ConflictingEvidence, "Evidências públicas conflitantes; o modelo não foi identificado."));
+        }
+
+        var manufacturerOnly = analysis.LooksLikeZte && analysis.Model is null && analysis.Confidence >= 0.35;
+        var identifiedModel = analysis.Model is not null && analysis.LooksLikeZte && analysis.Confidence >= 0.55;
+        if (!identifiedModel && !manufacturerOnly)
         {
             _logger.LogInformation(
-                "Probe ZTE sem evidência suficiente em {Endpoint}. confiança={Confidence}",
+                "Probe ZTE sem evidência suficiente em {Endpoint}. confiança={Confidence} nível={Level} modelo={Model}",
                 endpoint,
-                analysis.Confidence);
+                analysis.Confidence,
+                analysis.ConfidenceLevel,
+                analysis.Model);
 
             return AdapterProbeResult.NoMatch(
                 AdapterId,
@@ -64,6 +77,13 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter, IOntAuthenticationAdap
         var evidence = analysis.Evidence
             .Select(item => new ProbeEvidence("public-html", item))
             .ToList();
+
+        _logger.LogInformation(
+            "Probe ZTE identificado em {Endpoint}: fabricante={Manufacturer} modelo={Model} confiança={Confidence}",
+            endpoint,
+            Manufacturer,
+            analysis.Model ?? "não confirmado",
+            analysis.Confidence);
 
         return AdapterProbeResult.Match(
             AdapterId,

@@ -10,6 +10,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        viewModel.ClearPasswordRequested += (_, _) => PasswordInput.Clear();
+        Closed += (_, _) => viewModel.ClearSecrets();
     }
 
     private void OnPasswordChanged(object sender, RoutedEventArgs e)

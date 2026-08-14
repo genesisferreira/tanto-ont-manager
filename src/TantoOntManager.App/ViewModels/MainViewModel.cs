@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
 using System.Net;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security;
 using System.Windows.Input;
+using TantoOntManager.Application.Contracts;
 using TantoOntManager.Application.UseCases;
 using TantoOntManager.Domain.Audit;
 using TantoOntManager.Domain.Common;
+using TantoOntManager.Domain.Detection;
 using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Network;
 using TantoOntManager.Infrastructure.DependencyInjection;
@@ -21,7 +24,7 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IListEthernetAdaptersUseCase _listAdapters;
     private readonly IDetectOntUseCase _detectOnt;
     private readonly ITestConnectionUseCase _testConnection;
-    private readonly IAuthenticateDeviceUseCase _authenticate;
+    private readonly IExportPublicDiagnosticUseCase _exportDiagnostic;
     private readonly LoggingPaths _loggingPaths;
     private CancellationTokenSource _cts = new();
 
@@ -49,20 +52,28 @@ public sealed class MainViewModel : ViewModelBase
     private string _wanProfiles = "—";
     private string _capabilities = "—";
     private string _recommendations = "Modo laboratório — somente leitura. Nenhuma alteração será enviada à ONT ou à placa de rede.";
-    private string _authMessage = "O login desta firmware ainda não foi mapeado. Usuário e senha não serão enviados.";
-    private AdapterProbeSnapshot? _lastProbe;
+    private string _authMessage = "Login indisponível: o método de autenticação desta firmware ainda não foi mapeado (AuthenticationMethodNotMapped). Usuário e senha não são enviados.";
+    private string _httpStatus = "—";
+    private string _publicTitle = "—";
+    private string _responseSize = "—";
+    private string _shortHash = "—";
+    private string _confidenceLabel = DetectionConfidence.Insufficient.ToUiLabel();
+    private string _evidenceText = "Nenhuma evidência pública ainda.";
+    private string _probeDetails = "Execute Detectar ONT para preencher o diagnóstico sanitizado.";
+    private string _exportPath = "—";
+    private bool _detailsExpanded;
 
     public MainViewModel(
         IListEthernetAdaptersUseCase listAdapters,
         IDetectOntUseCase detectOnt,
         ITestConnectionUseCase testConnection,
-        IAuthenticateDeviceUseCase authenticate,
+        IExportPublicDiagnosticUseCase exportDiagnostic,
         LoggingPaths loggingPaths)
     {
         _listAdapters = listAdapters;
         _detectOnt = detectOnt;
         _testConnection = testConnection;
-        _authenticate = authenticate;
+        _exportDiagnostic = exportDiagnostic;
         _loggingPaths = loggingPaths;
 
         Adapters = new ObservableCollection<EthernetAdapterInfo>();
@@ -70,23 +81,28 @@ public sealed class MainViewModel : ViewModelBase
         DetectCommand = new RelayCommand(DetectAsync, () => !IsBusy);
         TestConnectionCommand = new RelayCommand(TestConnectionAsync, () => !IsBusy);
         RefreshAdaptersCommand = new RelayCommand(LoadAdapters, () => !IsBusy);
-        LoginCommand = new RelayCommand(LoginAsync, () => !IsBusy);
+        ExportCommand = new RelayCommand(ExportAsync, () => !IsBusy);
+        LoginCommand = new RelayCommand(static () => { }, () => false);
         LoadAdapters();
     }
+
+    public event EventHandler? ClearPasswordRequested;
 
     public ObservableCollection<EthernetAdapterInfo> Adapters { get; }
     public ObservableCollection<string> KnownIpOptions { get; }
     public ICommand DetectCommand { get; }
     public ICommand TestConnectionCommand { get; }
     public ICommand RefreshAdaptersCommand { get; }
+    public ICommand ExportCommand { get; }
     public ICommand LoginCommand { get; }
 
     public string ProductName => "Tanto ONT Manager";
     public string ModeLabel => OperationMode.LaboratoryReadOnly.ToUiLabel();
     public string VersionLabel => "v" + (Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.1.0-lab");
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.1.1-lab");
 
     public string LogPath => _loggingPaths.CurrentHint;
+    public bool IsAuthenticationMapped => false;
 
     public EthernetAdapterInfo? SelectedAdapter
     {
@@ -159,6 +175,7 @@ public sealed class MainViewModel : ViewModelBase
                 (DetectCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (TestConnectionCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (RefreshAdaptersCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (ExportCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (LoginCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         }
@@ -182,6 +199,15 @@ public sealed class MainViewModel : ViewModelBase
     public string Capabilities { get => _capabilities; set => SetProperty(ref _capabilities, value); }
     public string Recommendations { get => _recommendations; set => SetProperty(ref _recommendations, value); }
     public string AuthMessage { get => _authMessage; set => SetProperty(ref _authMessage, value); }
+    public string HttpStatus { get => _httpStatus; set => SetProperty(ref _httpStatus, value); }
+    public string PublicTitle { get => _publicTitle; set => SetProperty(ref _publicTitle, value); }
+    public string ResponseSize { get => _responseSize; set => SetProperty(ref _responseSize, value); }
+    public string ShortHash { get => _shortHash; set => SetProperty(ref _shortHash, value); }
+    public string ConfidenceLabel { get => _confidenceLabel; set => SetProperty(ref _confidenceLabel, value); }
+    public string EvidenceText { get => _evidenceText; set => SetProperty(ref _evidenceText, value); }
+    public string ProbeDetails { get => _probeDetails; set => SetProperty(ref _probeDetails, value); }
+    public string ExportPath { get => _exportPath; set => SetProperty(ref _exportPath, value); }
+    public bool DetailsExpanded { get => _detailsExpanded; set => SetProperty(ref _detailsExpanded, value); }
 
     public SecureString Password { get; private set; } = new();
 
@@ -189,6 +215,14 @@ public sealed class MainViewModel : ViewModelBase
     {
         Password.Dispose();
         Password = password.Copy();
+    }
+
+    public void ClearSecrets()
+    {
+        Username = string.Empty;
+        Password.Dispose();
+        Password = new SecureString();
+        ClearPasswordRequested?.Invoke(this, EventArgs.Empty);
     }
 
     public void LoadAdapters()
@@ -221,7 +255,12 @@ public sealed class MainViewModel : ViewModelBase
             Status = report.Status;
             StatusLabel = report.Status.ToUiLabel();
             LastDuration = FormatDuration(report.Duration);
+            ConfidenceLabel = report.Confidence.ToUiLabel();
+            EvidenceText = report.EvidenceList.Count == 0
+                ? "Nenhuma evidência pública suficiente."
+                : string.Join(Environment.NewLine, report.EvidenceList);
             Recommendations = string.Join(Environment.NewLine + Environment.NewLine, report.Recommendations.Select(item => $"{item.Title}{Environment.NewLine}{item.Details}"));
+            ApplyObservation(report.PublicObservation);
 
             if (report.Device is { } device)
             {
@@ -232,17 +271,10 @@ public sealed class MainViewModel : ViewModelBase
                 Boot = device.Identity.Firmware.BootDisplay;
                 Serial = SensitiveDataMasker.MaskSerial(device.Identity.SerialNumber);
                 Mac = SensitiveDataMasker.MaskMac(device.Identity.MacAddress);
-                _lastProbe = new AdapterProbeSnapshot(
-                    device.AdapterId,
-                    device.Identity.Manufacturer,
-                    device.Identity.Model,
-                    device.Endpoint,
-                    device.Confidence);
             }
             else
             {
                 ClearIdentity("Não identificado");
-                _lastProbe = null;
             }
 
             if (report.PublicDiagnostics is { } diagnostics)
@@ -262,6 +294,11 @@ public sealed class MainViewModel : ViewModelBase
             if (report.Connectivity is { } connectivity)
             {
                 LastOperation = $"Detecção em {target}: HTTPS={(connectivity.HttpsReachable ? "sim" : "não")}, HTTP={(connectivity.HttpReachable ? "sim" : "não")}, ICMP={(connectivity.IcmpReachable ? "sim" : "não")}";
+            }
+
+            if (report.Status == ApplicationStatus.ControlledFailure)
+            {
+                ClearSecrets();
             }
         });
     }
@@ -284,6 +321,7 @@ public sealed class MainViewModel : ViewModelBase
             Status = result.AnyHttpReachable ? ApplicationStatus.Detected : ApplicationStatus.ControlledFailure;
             StatusLabel = Status.ToUiLabel();
             LastOperation = $"Teste {target}: ICMP={(result.IcmpReachable ? "sim" : "não")} HTTPS={(result.HttpsReachable ? "sim" : "não")} HTTP={(result.HttpReachable ? "sim" : "não")} título={result.PageTitle ?? "—"}";
+            ApplyObservation(result.PrimaryObservation);
             Recommendations = result.ErrorMessage
                 ?? result.TlsNote
                 ?? "A interface web respondeu. Nenhuma alteração foi enviada.";
@@ -296,41 +334,77 @@ public sealed class MainViewModel : ViewModelBase
                     Recommendations = suggestion.ToOperatorText() + Environment.NewLine + Environment.NewLine + Recommendations;
                 }
             }
+
+            if (Status == ApplicationStatus.ControlledFailure)
+            {
+                ClearSecrets();
+            }
         });
     }
 
-    private async Task LoginAsync()
+    private async Task ExportAsync()
     {
-        if (_lastProbe is null)
+        await RunBusyAsync("Exportar diagnóstico público", async () =>
         {
-            SetFailure("Detecte a ONT antes de tentar autenticar. Sem probe público, o login não é enviado.");
+            var password = ReadPasswordForScanOnly();
+            try
+            {
+                var result = await _exportDiagnostic.ExecuteAsync(
+                    new ExportPublicDiagnosticCommand(Username, password),
+                    _cts.Token);
+                if (result.IsFailure)
+                {
+                    SetFailure(result.Error?.Message + " " + result.Error?.Recommendation);
+                    ClearSecrets();
+                    return;
+                }
+
+                ExportPath = result.Value!;
+                LastOperation = "Diagnóstico público sanitizado salvo em " + result.Value;
+                Recommendations = "Arquivo gerado somente com a resposta pública. Cookies, senhas e cabeçalhos de autorização não entram no ZIP.";
+            }
+            finally
+            {
+                password = null;
+            }
+        });
+    }
+
+    private void ApplyObservation(HttpPublicObservation? observation)
+    {
+        if (observation is null)
+        {
+            HttpStatus = "—";
+            PublicTitle = "—";
+            ResponseSize = "—";
+            ShortHash = "—";
+            ProbeDetails = "Sem observação HTTP pública.";
             return;
         }
 
-        await RunBusyAsync("Login", async () =>
-        {
-            using var credentials = new Domain.Sessions.DeviceCredentials(Username, Password.Copy(), persistRequested: !DoNotPersistCredential);
-            var probe = new Domain.Adapters.AdapterProbeResult
-            {
-                Matched = true,
-                AdapterId = _lastProbe.AdapterId,
-                Manufacturer = _lastProbe.Manufacturer,
-                Model = _lastProbe.Model,
-                Confidence = _lastProbe.Confidence,
-                Endpoint = _lastProbe.Endpoint
-            };
-
-            var result = await _authenticate.ExecuteAsync(
-                new AuthenticateCommand(_lastProbe.Endpoint, probe, credentials),
-                _cts.Token);
-
-            AuthMessage = result.Error?.Message + Environment.NewLine + result.Error?.Recommendation;
-            Status = ApplicationStatus.ControlledFailure;
-            StatusLabel = result.Outcome.ToString() == "MethodNotMapped"
-                ? "AuthenticationMethodNotMapped"
-                : ApplicationStatus.ControlledFailure.ToUiLabel();
-            LastOperation = "Login não enviado: método de autenticação não mapeado para esta firmware.";
-        });
+        HttpStatus = observation.StatusDisplay;
+        PublicTitle = observation.Title ?? "—";
+        ResponseSize = $"{observation.BodyLengthBytes} bytes";
+        ShortHash = observation.ShortHash;
+        ProbeDetails =
+            $"IP: {observation.TargetAddress}{Environment.NewLine}" +
+            $"Protocolo: {observation.Scheme}  Porta: {observation.Port}{Environment.NewLine}" +
+            $"Método: {string.Join(", ", observation.HttpMethodsUsed.Distinct())}{Environment.NewLine}" +
+            $"URI final: {observation.FinalUri}{Environment.NewLine}" +
+            $"Redirects: {observation.RedirectCount}{Environment.NewLine}" +
+            $"Content-Type: {observation.ContentType ?? "—"}{Environment.NewLine}" +
+            $"Charset: {observation.Charset ?? "—"}{Environment.NewLine}" +
+            $"Encoding: {observation.DetectedEncoding ?? "—"}{Environment.NewLine}" +
+            $"Comprimido: {(observation.ContentWasCompressed ? "sim" : "não")}{Environment.NewLine}" +
+            $"Timeout: {(observation.TimedOut ? "sim" : "não")}{Environment.NewLine}" +
+            $"Conexão: {observation.ConnectDuration.TotalMilliseconds:0} ms{Environment.NewLine}" +
+            $"Total: {observation.TotalDuration.TotalMilliseconds:0} ms{Environment.NewLine}" +
+            $"TLS: {observation.Certificate.ErrorCategory}{Environment.NewLine}" +
+            $"Certificado: {observation.Certificate.Subject ?? "—"}{Environment.NewLine}" +
+            $"Emissor: {observation.Certificate.Issuer ?? "—"}{Environment.NewLine}" +
+            $"Validade: {observation.Certificate.NotBefore:u} → {observation.Certificate.NotAfter:u}{Environment.NewLine}" +
+            $"SHA-256 cert: {observation.Certificate.Sha256Fingerprint ?? "—"}{Environment.NewLine}" +
+            $"Exceção local: {(observation.Certificate.AcceptedByLocalException ? "sim" : "não")}";
     }
 
     private async Task RunBusyAsync(string operation, Func<Task> action)
@@ -347,10 +421,12 @@ public sealed class MainViewModel : ViewModelBase
         catch (OperationCanceledException)
         {
             SetFailure("Operação cancelada.");
+            ClearSecrets();
         }
         catch (InvalidOperationException ex)
         {
             SetFailure(ex.Message);
+            ClearSecrets();
         }
         finally
         {
@@ -396,6 +472,7 @@ public sealed class MainViewModel : ViewModelBase
         StatusLabel = ApplicationStatus.ControlledFailure.ToUiLabel();
         LastOperation = message;
         Recommendations = message;
+        ClearSecrets();
     }
 
     private void ClearIdentity(string fallback)
@@ -414,12 +491,30 @@ public sealed class MainViewModel : ViewModelBase
         Capabilities = "—";
     }
 
+    private string? ReadPasswordForScanOnly()
+    {
+        if (Password.Length == 0)
+        {
+            return null;
+        }
+
+        var pointer = Marshal.SecureStringToGlobalAllocUnicode(Password);
+        try
+        {
+            return Marshal.PtrToStringUni(pointer);
+        }
+        finally
+        {
+            Marshal.ZeroFreeGlobalAllocUnicode(pointer);
+        }
+    }
+
     private static string FormatDuration(TimeSpan duration)
         => duration.TotalSeconds < 1
             ? $"{duration.TotalMilliseconds:0} ms"
             : $"{duration.TotalSeconds:0.0} s";
 
-    private static string FormatOptical(Domain.Devices.OpticalReading optical)
+    private static string FormatOptical(OpticalReading optical)
     {
         if (optical.TxPower is null && optical.RxPower is null)
         {
@@ -428,11 +523,4 @@ public sealed class MainViewModel : ViewModelBase
 
         return $"Tx {optical.TxPower ?? "—"} / Rx {optical.RxPower ?? "—"}";
     }
-
-    private sealed record AdapterProbeSnapshot(
-        string AdapterId,
-        string Manufacturer,
-        string? Model,
-        OntEndpoint Endpoint,
-        double Confidence);
 }

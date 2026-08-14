@@ -33,6 +33,8 @@ Antes de implementar qualquer gravação:
 
 ## Detector ZTE atual
 
-- Identifica F6201B só com evidência pública suficiente (título/corpo/marcadores ZXHN/ZTE/F6201B).
-- F6600P e F670L têm IDs preparados, sem detector específico nesta entrega.
-- Parser baseado em HTML público, tolerante a mudanças pequenas, sem gravar configuração.
+- Identifica F6201B por pontuação de evidências públicas (não por um único texto).
+- Evidências: `ZTE Corporation`, `Welcome to F6201B`, `F6201B`, marca `ZTE`, título, rodapé `©2008-2025 ZTE Corporation`.
+- Segue redirects e frames públicos no mesmo IP, somente GET.
+- F6600P e F670L têm IDs preparados; conflito de modelos não identifica.
+- Gravação e login não estão mapeados.

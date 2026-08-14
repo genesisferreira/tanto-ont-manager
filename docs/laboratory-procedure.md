@@ -34,13 +34,16 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 3. Selecione o IP conhecido ou informe um IP personalizado.
 4. Mantenha o aviso de certificado local visível.
 5. Clique em `Testar conexão` e depois em `Detectar ONT`.
+6. Confira confiança, evidências, status HTTPS e hash curto.
+7. Clique em `Exportar diagnóstico público` se precisar arquivar a página pública.
+8. O botão `Login` permanece desabilitado nesta fase.
 
 ## Resultado esperado nesta fase
 
-- Resposta HTTPS/HTTP do endereço testado
-- Reconhecimento público de ZTE F6201B quando o título/marcadores existirem
-- Hardware, firmware, boot, serial, MAC, PON, temperatura, potência e WAN como “não disponíveis na interface pública”, salvo se aparecerem na página pública
-- Login: `AuthenticationMethodNotMapped`
+- Resposta HTTPS do endereço testado (HTTP pode estar indisponível)
+- Identificação pública `ZTE ZXHN F6201B` com evidências suficientes
+- Hardware, firmware, boot, serial, MAC, PON, temperatura, potência e WAN como “não disponíveis na interface pública”
+- Login: `AuthenticationMethodNotMapped` (botão desabilitado)
 
 ## Proibido no laboratório desta fase
 

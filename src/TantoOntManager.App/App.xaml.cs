@@ -14,14 +14,13 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
-        var logDirectory = Path.Combine(
+        var root = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "TantoTelecom",
-            "TantoOntManager",
-            "logs");
+            "TantoOntManager");
 
         var services = new ServiceCollection();
-        services.AddTantoOntManager(logDirectory);
+        services.AddTantoOntManager(root);
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
         _services = services.BuildServiceProvider();
@@ -32,6 +31,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _services?.GetService<MainViewModel>()?.ClearSecrets();
         _services?.Dispose();
         base.OnExit(e);
     }

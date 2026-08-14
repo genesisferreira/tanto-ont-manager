@@ -153,7 +153,12 @@ public sealed class DetectOntUseCase : IDetectOntUseCase
             diagnostics,
             recommendations,
             status,
-            DateTimeOffset.UtcNow - started);
+            DateTimeOffset.UtcNow - started,
+            device is null
+                ? DetectionConfidence.Insufficient
+                : DetectionConfidenceDisplay.FromScore(device.Confidence, false),
+            device?.Evidence,
+            connectivity.PrimaryObservation);
 
         _auditLog.Record(AuditEvent.Create(
             "detect-ont",
