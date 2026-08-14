@@ -41,9 +41,9 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 10. Após o login, confira as abas Dispositivo, PON e WAN. Use `Exportar diagnóstico autenticado` e confira a inspeção do ZIP.
 11. Clique em `Encerrar sessão` ao terminar. O aplicativo envia no máximo um POST de logout oficial e descarta os cookies.
 
-## Observação passiva de GETs (0.1.6.1-lab)
+## Observação passiva de GETs (0.1.6.2-lab)
 
-1. Confirme o Microsoft Edge WebView2 Runtime x64 instalado. Sem ele, o observador fecha só a janela própria e preserva a sessão autenticada.
+1. O observador usa o Runtime Evergreen do sistema (`browserExecutableFolder: null`). A pasta temporária é só `userDataFolder`. A instalação em Program Files (x86)/WOW6432Node é válida.
 2. Com a F6201B autenticada em modo laboratório, clique em `Observar navegação GET` e confirme.
 3. No WebView2 isolado, feche o baseline do shell e use os botões Device / PON / WAN Status / WAN Config.
 4. Durante os 20 s de cada captura, navegue **manualmente** na tela correspondente da ONT.

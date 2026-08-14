@@ -27,6 +27,50 @@ public sealed class ObserverInitializationGuardTests
     }
 
     [Fact]
+    public void CreateAsync_named_args_never_treat_user_data_folder_as_fixed_runtime()
+    {
+        var folder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TantoTelecom",
+            "TantoOntManager",
+            "observer-webview",
+            Guid.NewGuid().ToString("N"));
+        var create = ObserverWebView2CreateRequest.ForIsolatedProfile(folder);
+        create.BrowserExecutableFolder.Should().BeNull();
+        create.UserDataFolder.Should().Be(folder);
+        create.UsesTemporaryFolderAsFixedRuntime.Should().BeFalse();
+        string.Equals(create.BrowserExecutableFolder, create.UserDataFolder, StringComparison.OrdinalIgnoreCase)
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void Positional_user_data_as_browser_executable_is_the_fixed_runtime_bug()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "observer-webview", Guid.NewGuid().ToString("N"));
+        var wrong = new ObserverWebView2CreateRequest(folder, folder);
+        wrong.UsesTemporaryFolderAsFixedRuntime.Should().BeTrue();
+        var correct = ObserverWebView2CreateRequest.ForIsolatedProfile(folder);
+        correct.BrowserExecutableFolder.Should().BeNull();
+        correct.UserDataFolder.Should().Be(folder);
+        correct.UsesTemporaryFolderAsFixedRuntime.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Cookies_are_transferred_only_after_ensure_core_completes()
+    {
+        var state = new ObserverStartupState();
+        state.TryBegin().Should().BeTrue();
+        state.TryTransferCookies().Should().BeFalse("CreateAsync ainda não concluiu EnsureCoreWebView2Async");
+        state.CookiesTransferred.Should().BeFalse();
+        state.MarkCoreReady();
+        state.TryTransferCookies().Should().BeTrue();
+        state.CookiesTransferred.Should().BeTrue();
+        ObserverInitializationGuard.FromException(
+            new WebView2RuntimeNotFoundException("Couldn't find a compatible Webview2 Runtime installation to host WebViews."),
+            cookiesTransferred: false).ConfigurationPostsSent.Should().Be(0);
+    }
+
+    [Fact]
     public void Cookies_are_not_transferred_before_core_is_ready()
     {
         var state = new ObserverStartupState();

@@ -139,7 +139,7 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter
             WriteOperationsSupportedByAdapter: false,
             Notes:
             [
-                "Fase 0.1.6.1-lab: observação passiva dos GETs dinâmicos da F6201B, sem escrita.",
+                "Fase 0.1.6.2-lab: observação passiva dos GETs dinâmicos da F6201B, sem escrita.",
                 "WAN, VLAN, PPPoE e TR-069 não são gravados.",
                 "F6600P e F670L têm estrutura preparada, sem detector específico nesta entrega.",
                 "Gravação desativada por padrão e sem contrato homologado."

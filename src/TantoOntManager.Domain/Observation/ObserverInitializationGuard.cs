@@ -2,6 +2,23 @@ using TantoOntManager.Domain.Common;
 
 namespace TantoOntManager.Domain.Observation;
 
+public sealed record ObserverWebView2CreateRequest(string? BrowserExecutableFolder, string UserDataFolder)
+{
+    public static ObserverWebView2CreateRequest ForIsolatedProfile(string userDataFolder)
+    {
+        if (string.IsNullOrWhiteSpace(userDataFolder))
+        {
+            throw new ArgumentException("A pasta isolada do observador é obrigatória.", nameof(userDataFolder));
+        }
+
+        return new(null, userDataFolder);
+    }
+
+    public bool UsesTemporaryFolderAsFixedRuntime
+        => !string.IsNullOrWhiteSpace(BrowserExecutableFolder)
+           && string.Equals(BrowserExecutableFolder, UserDataFolder, StringComparison.OrdinalIgnoreCase);
+}
+
 public sealed class ObserverStartupState
 {
     private readonly object _gate = new();

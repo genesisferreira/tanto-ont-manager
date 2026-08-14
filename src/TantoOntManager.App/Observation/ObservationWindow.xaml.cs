@@ -54,7 +54,10 @@ public partial class ObservationWindow : Window
         try
         {
             Directory.CreateDirectory(_request.UserDataFolder);
-            var environment = await CoreWebView2Environment.CreateAsync(_request.UserDataFolder);
+            var create = ObserverWebView2CreateRequest.ForIsolatedProfile(_request.UserDataFolder);
+            var environment = await CoreWebView2Environment.CreateAsync(
+                browserExecutableFolder: create.BrowserExecutableFolder,
+                userDataFolder: create.UserDataFolder);
             await WebView.EnsureCoreWebView2Async(environment);
             var core = WebView.CoreWebView2
                        ?? throw new InvalidOperationException("CoreWebView2 não inicializado.");
