@@ -133,6 +133,37 @@ public sealed class ObservationEngineTests
     }
 
     [Fact]
+    public void Records_header_presence_cookie_names_and_token_length_without_values()
+    {
+        using var engine = new ObservationEngine(Ont);
+        var uri = new Uri("https://192.168.100.1/?_type=menuData&_tag=devmgr_statusmgr_lua.lua&_=1");
+        var context = new ObservedRequestContext(
+            true,
+            false,
+            true,
+            true,
+            false,
+            ["SID_HTTPS_", "_TESTCOOKIESUPPORT_HTTPS_"],
+            false,
+            0,
+            "xhr");
+        engine.Evaluate(new IncomingObservationRequest("GET", uri, RequestContext: context));
+        engine.CompleteGet(new IncomingObservationRequest("GET", uri, RequestContext: context), 200, "text/xml", "<ok/>", "https://192.168.100.1/");
+        var record = engine.Gets.Single();
+        record.RequestContext!.HasXRequestedWith.Should().BeTrue();
+        record.RequestContext.HasReferer.Should().BeTrue();
+        record.RequestContext.HasOrigin.Should().BeFalse();
+        record.RequestContext.CookieNames.Should().Equal("SID_HTTPS_", "_TESTCOOKIESUPPORT_HTTPS_");
+        record.RequestContext.SessionTokenPresent.Should().BeFalse();
+        var summary = engine.ToSummaryText();
+        summary.Should().Contain("X-Requested-With");
+        summary.Should().Contain("xhr");
+        summary.Should().Contain("SID_HTTPS_");
+        summary.Should().NotContain("SID_HTTPS_=");
+        summary.Should().NotContain("sekrit");
+    }
+
+    [Fact]
     public void Serial_mac_loid_and_pppoe_are_masked()
     {
         var structure = ResponseStructureInspector.Inspect(

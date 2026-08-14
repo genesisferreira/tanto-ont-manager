@@ -27,7 +27,23 @@ public sealed record IncomingObservationRequest(
     Uri? RedirectLocation = null,
     bool IsDownload = false,
     bool IsNewWindow = false,
-    string? Initiator = null);
+    string? Initiator = null,
+    ObservedRequestContext? RequestContext = null);
+
+public sealed record ObservedRequestContext(
+    bool HasReferer,
+    bool HasOrigin,
+    bool HasXRequestedWith,
+    bool HasAccept,
+    bool HasAcceptLanguage,
+    IReadOnlyList<string> CookieNames,
+    bool SessionTokenPresent,
+    int SessionTokenLength,
+    string InitiatorKind)
+{
+    public static ObservedRequestContext Empty { get; } = new(
+        false, false, false, false, false, [], false, 0, "unknown");
+}
 
 public sealed record ObservationDecision(
     bool Allowed,
@@ -52,7 +68,8 @@ public sealed record ObservedGetRecord(
     ObservedGetClassification Classification,
     bool IsBaseline,
     bool IsNewOrChanged,
-    string NormalizedUrl);
+    string NormalizedUrl,
+    ObservedRequestContext? RequestContext = null);
 
 public sealed record BlockedRequestRecord(
     int Sequence,

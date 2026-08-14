@@ -69,6 +69,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         transport.Posts.Should().HaveCount(1);
         transport.Posts[0].Should().Contain("_tag=login_entry");
         transport.Gets.Should().Contain("/");
+        transport.Gets.Should().Contain(uri => uri.Contains("statusMgr"));
         transport.Gets.Should().Contain(uri => uri.Contains("devmgr_statusmgr_lua.lua"));
         transport.Gets.Should().Contain(uri => uri.Contains("optical_info_lua.lua"));
         transport.Gets.Should().Contain(uri => uri.Contains("wan_internetstatus_lua.lua"));
@@ -425,6 +426,11 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
                 return Task.FromResult(BoundHttpResult.Fail(Error.Create(ErrorCodes.GetNotAllowlisted, "bloqueado")));
             }
 
+            if (pathAndQuery.Contains("_type=menuView", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(Ok("<html><body>template</body></html>", pathAndQuery));
+            }
+
             string body;
             if (pathAndQuery.Contains("login_entry"))
             {
@@ -437,7 +443,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
             else if (pathAndQuery.Contains("wan_internet", StringComparison.OrdinalIgnoreCase)
                      || pathAndQuery.Contains("_tag=wan", StringComparison.OrdinalIgnoreCase))
             {
-                body = WanHtml ?? DeviceHtml;
+                body = WrapXml(WanHtml ?? DeviceHtml, "ID_WAN_COMFIG", "WANCName", "HSI_TR069");
             }
             else if (pathAndQuery.Contains("devmgr_statusmgr", StringComparison.OrdinalIgnoreCase)
                      || pathAndQuery.Contains("optical_info", StringComparison.OrdinalIgnoreCase)
@@ -445,7 +451,9 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
                      || pathAndQuery.Contains("homePage", StringComparison.OrdinalIgnoreCase)
                      || pathAndQuery.Contains("pon", StringComparison.OrdinalIgnoreCase))
             {
-                body = DeviceHtml;
+                body = pathAndQuery.Contains("optical_info", StringComparison.OrdinalIgnoreCase)
+                    ? WrapXml(DeviceHtml, "OBJ_PON_OPTICALPARA_ID", "ONU State", "Initial State(o1)")
+                    : WrapXml(DeviceHtml, "OBJ_DEVINFO_ID", "Software Version", ReadColon(DeviceHtml, "Software Version") ?? "V9.3.10P8N1");
             }
             else
             {
@@ -505,6 +513,55 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         }
 
         public void Dispose() => ClearCookiesAndState("dispose");
+
+        private static string WrapXml(string source, string objectId, string fallbackName, string fallbackValue)
+        {
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return "<?xml version=\"1.0\"?><ajax_response_xml_root><IF_ERRORSTR>SUCC</IF_ERRORSTR><IF_ERRORID>0</IF_ERRORID></ajax_response_xml_root>";
+            }
+
+            if (source.Contains("ParaName", StringComparison.OrdinalIgnoreCase)
+                && source.Contains(objectId, StringComparison.OrdinalIgnoreCase))
+            {
+                return source;
+            }
+
+            var software = ReadColon(source, "Software Version") ?? fallbackValue;
+            var hardware = ReadColon(source, "Hardware Version") ?? "V9.3.12";
+            var boot = ReadColon(source, "Boot Version") ?? "V9.3.10P10N6";
+            if (objectId == "OBJ_DEVINFO_ID")
+            {
+                return "<ajax_response_xml_root><OBJ_DEVINFO_ID><Instance>"
+                       + "<ParaName>Device Type</ParaName><ParaValue>F6201B</ParaValue>"
+                       + "<ParaName>Hardware Version</ParaName><ParaValue>" + hardware + "</ParaValue>"
+                       + "<ParaName>Software Version</ParaName><ParaValue>" + software + "</ParaValue>"
+                       + "<ParaName>Boot Version</ParaName><ParaValue>" + boot + "</ParaValue>"
+                       + "</Instance></OBJ_DEVINFO_ID></ajax_response_xml_root>";
+            }
+
+            if (objectId == "OBJ_PON_OPTICALPARA_ID")
+            {
+                return "<ajax_response_xml_root><OBJ_PON_OPTICALPARA_ID><Instance>"
+                       + "<ParaName>ONU State</ParaName><ParaValue>Initial State(o1)</ParaValue>"
+                       + "<ParaName>Input Power</ParaName><ParaValue>--</ParaValue>"
+                       + "<ParaName>Output Power</ParaName><ParaValue>--</ParaValue>"
+                       + "</Instance></OBJ_PON_OPTICALPARA_ID></ajax_response_xml_root>";
+            }
+
+            return "<ajax_response_xml_root><ID_WAN_COMFIG><Instance>"
+                   + "<ParaName>WANCName</ParaName><ParaValue>HSI_TR069</ParaValue>"
+                   + "<ParaName>VLANID</ParaName><ParaValue>210</ParaValue>"
+                   + "</Instance></ID_WAN_COMFIG></ajax_response_xml_root>";
+        }
+
+        private static string? ReadColon(string text, string label)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(
+                text,
+                System.Text.RegularExpressions.Regex.Escape(label) + @":\s*(.+?)(?=\s+(?:Hardware|Software|Boot|ONU|Temperature|Tx|Rx|WAN|VLAN|Status|Service)\b|$)");
+            return match.Success ? match.Groups[1].Value.Trim() : null;
+        }
 
         private static BoundHttpResult Ok(string body, string uri)
         {

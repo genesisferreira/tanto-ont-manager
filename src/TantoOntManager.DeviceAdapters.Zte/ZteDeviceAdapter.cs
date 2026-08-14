@@ -139,7 +139,7 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter
             WriteOperationsSupportedByAdapter: false,
             Notes:
             [
-                "Fase 0.1.7-lab: leitura automática homologada de Device, PON, WAN Status e WAN Config da F6201B V9.3.10P8N1, sem escrita.",
+                "Fase 0.1.7.1-lab: leitura automática homologada de Device, PON, WAN Status e WAN Config da F6201B V9.3.10P8N1, sem escrita.",
                 "WAN, VLAN, PPPoE e TR-069 não são gravados.",
                 "F6600P e F670L têm estrutura preparada, sem detector específico nesta entrega.",
                 "Gravação desativada por padrão e sem contrato homologado."

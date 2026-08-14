@@ -391,6 +391,8 @@ public sealed class BoundOntTransport : IBoundOntTransport
                     request.Content = content;
                 }
 
+                ApplyHomologatedAjaxHeaders(request, current);
+
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 var body = await ReadBodyAsync(response, cancellationToken);
                 var status = (int)response.StatusCode;
@@ -460,7 +462,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
                 var kind = F6201BHtmlText.Classify(body);
                 var cookiesAfter = DescribeCookiesDetailed();
                 _logger.LogInformation(
-                    "HTTP autenticado sessionId={SessionId} client={Client} method={Method} path={Path} status={Status} redirects={Redirects} hash={Hash} posts={Posts} cookiesAntes={CookiesBefore} cookiesDepois={CookiesAfter} sidPresente={Sid} sidSecure={Secure} sidHttpOnly={HttpOnly} sidPath={PathCookie} tokenPresente={Token} tokenLen={TokenLen} classificacao={Kind} marcador={Marker}",
+                    "HTTP autenticado sessionId={SessionId} client={Client} method={Method} path={Path} status={Status} redirects={Redirects} hash={Hash} posts={Posts} cookiesAntes={CookiesBefore} cookiesDepois={CookiesAfter} sidPresente={Sid} sidSecure={Secure} sidHttpOnly={HttpOnly} sidPath={PathCookie} tokenPresente={Token} tokenLen={TokenLen} tokenNoQuery={TokenQuery} ajaxHeaders={Ajax} classificacao={Kind} marcador={Marker}",
                     _sessionId,
                     _httpClientInstanceId,
                     method.Method,
@@ -477,6 +479,8 @@ public sealed class BoundOntTransport : IBoundOntTransport
                     cookiesAfter.Path,
                     !string.IsNullOrEmpty(SessionToken),
                     SessionToken?.Length ?? 0,
+                    F6201BV9310P8N1AuthContract.ParseQuery(current.Query).ContainsKey("_sessionTOKEN"),
+                    DescribeAjaxHeaders(request),
                     kind,
                     F6201BHtmlText.SanitizedMarker(body));
 
@@ -528,6 +532,41 @@ public sealed class BoundOntTransport : IBoundOntTransport
                 0,
                 watch.Elapsed);
         }
+    }
+
+    private void ApplyHomologatedAjaxHeaders(HttpRequestMessage request, Uri uri)
+    {
+        var query = F6201BV9310P8N1AuthContract.ParseQuery(uri.Query);
+        if (!query.TryGetValue("_type", out var type)
+            || !F6201BV9310P8N1AuthContract.IsAllowedGetType(type))
+        {
+            return;
+        }
+
+        if (!request.Headers.Contains(F6201BV9310P8N1HomologatedReadContract.JqueryAjaxHeaderName))
+        {
+            request.Headers.TryAddWithoutValidation(
+                F6201BV9310P8N1HomologatedReadContract.JqueryAjaxHeaderName,
+                F6201BV9310P8N1HomologatedReadContract.JqueryAjaxHeaderValue);
+        }
+
+        request.Headers.Referrer ??= _endpoint.BaseUri;
+    }
+
+    private static string DescribeAjaxHeaders(HttpRequestMessage request)
+    {
+        var names = new List<string>();
+        if (request.Headers.Contains(F6201BV9310P8N1HomologatedReadContract.JqueryAjaxHeaderName))
+        {
+            names.Add(F6201BV9310P8N1HomologatedReadContract.JqueryAjaxHeaderName);
+        }
+
+        if (request.Headers.Referrer is not null)
+        {
+            names.Add("Referer");
+        }
+
+        return names.Count == 0 ? "none" : string.Join(";", names);
     }
 
     private HttpClient GetOrCreateClient()

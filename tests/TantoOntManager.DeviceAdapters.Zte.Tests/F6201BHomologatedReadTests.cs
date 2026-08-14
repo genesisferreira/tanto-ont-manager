@@ -32,6 +32,12 @@ public sealed class F6201BHomologatedReadTests
         config.Should().Contain("_tag=wan_internet_lua.lua").And.Contain("TypeUplink=2").And.Contain("pageType=0");
         status.Should().NotContain("pageType=0");
         config.Should().NotContain("pageType=1");
+        var deviceView = F6201BV9310P8N1HomologatedReadContract.BuildPath(
+            F6201BV9310P8N1HomologatedReadContract.DeviceTemplate, "1");
+        deviceView.Should().Contain("_type=menuView").And.Contain("_tag=statusMgr").And.Contain("Menu3Location=0");
+        F6201BV9310P8N1HomologatedReadContract.BuildPath(
+            F6201BV9310P8N1HomologatedReadContract.WanConfigTemplate, "1")
+            .Should().Contain("_tag=ethWanConfig");
         F6201BGetUrl.Identity(status).Should().Be(
             F6201BGetUrl.Identity(F6201BV9310P8N1HomologatedReadContract.BuildPath(
                 F6201BV9310P8N1HomologatedReadContract.WanStatus, "999")));
@@ -101,11 +107,17 @@ public sealed class F6201BHomologatedReadTests
         string.Join('\n', result.Wan.Evidence.Select(item => item.Snippet + item.Value)).Should().NotContain("secret-lab");
         result.Device.SerialNumber.Should().Be("ZTEG00LAB001");
         SensitiveDataMaskerShouldHide(result);
+        result.Traces.Should().NotContain(item => item.Outcome == "GenericXmlResponse");
         transport.Posts.Should().BeEmpty();
         transport.ConfigPostCount.Should().Be(0);
-        transport.Gets.Should().HaveCount(4);
+        transport.Gets.Should().HaveCount(8);
         transport.Gets.Should().OnlyContain(uri => uri.Contains("192.168.100.1") || uri.StartsWith("/?"));
-        transport.Gets.Select(F6201BGetUrl.Identity).Distinct().Should().HaveCount(4);
+        transport.Gets.Should().NotContain(uri => uri.Contains("_sessionTOKEN="));
+        transport.Gets.Select(F6201BGetUrl.Identity).Distinct().Should().HaveCount(8);
+        IndexOf(transport.Gets, "statusMgr").Should().Be(IndexOf(transport.Gets, "devmgr_statusmgr_lua.lua") - 1);
+        IndexOf(transport.Gets, "ponopticalinfo").Should().Be(IndexOf(transport.Gets, "optical_info_lua.lua") - 1);
+        IndexOf(transport.Gets, "ethWanStatus").Should().Be(IndexOf(transport.Gets, "wan_internetstatus_lua.lua") - 1);
+        IndexOf(transport.Gets, "ethWanConfig").Should().Be(IndexOf(transport.Gets, "wan_internet_lua.lua") - 1);
         result.SessionCookiesPreserved.Should().BeTrue();
         transport.HasSessionCookie.Should().BeTrue();
         typeof(F6201BHomologatedReadCoordinator).Assembly.GetReferencedAssemblies()
@@ -160,7 +172,9 @@ public sealed class F6201BHomologatedReadTests
         var result = await F6201BHomologatedReadCoordinator.ReadAsync(transport, CancellationToken.None);
         result.FirmwareCompatibility.Should().Be(FirmwareCompatibility.ConfirmedIncompatible);
         transport.Gets.Should().Contain(uri => uri.Contains("devmgr_statusmgr_lua.lua"));
+        transport.Gets.Should().Contain(uri => uri.Contains("statusMgr"));
         transport.Gets.Should().NotContain(uri => uri.Contains("wan_internet_lua.lua"));
+        transport.Gets.Should().NotContain(uri => uri.Contains("optical_info_lua.lua"));
         F6201BFirmwareCompatibility.AllowsWrite(result.FirmwareCompatibility).Should().BeFalse();
         transport.HasSessionCookie.Should().BeTrue();
     }
@@ -186,6 +200,70 @@ public sealed class F6201BHomologatedReadTests
         string.Join('\n', wan.Profiles.Select(item => item.Name + item.ServiceList)).Should().NotContain("secret-lab");
     }
 
+    [Fact]
+    public void Generic_ack_xml_of_203_bytes_is_not_success()
+    {
+        var xml = Fixture("zte-f6201b-v9310p8n1-generic-ack.xml").Replace("\r\n", "\n").TrimEnd();
+        xml.Length.Should().Be(203);
+        var structure = F6201BAjaxXml.Inspect(xml);
+        structure.IsGenericAck.Should().BeTrue();
+        structure.Root.Should().Be("ajax_response_xml_root");
+        structure.ElementNames.Should().Contain("IF_ERRORSTR");
+        structure.HasParaName.Should().BeFalse();
+        structure.SizeBytes.Should().Be(203);
+        F6201BAjaxXml.SatisfiesContract(xml, ["OBJ_DEVINFO_ID"]).Should().BeFalse();
+        F6201BAjaxXml.SatisfiesContract(Fixture("zte-f6201b-v9310p8n1-homologated-device.xml"), ["OBJ_DEVINFO_ID"]).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Four_generic_xml_responses_do_not_fill_fields_and_keep_session()
+    {
+        var transport = new HomologatedTransport { GenericXml = true };
+        var result = await F6201BHomologatedReadCoordinator.ReadAsync(transport, CancellationToken.None);
+
+        result.Device.DeviceType.Should().BeNull();
+        result.Device.SoftwareVersion.Should().BeNull();
+        result.Pon.OnuState.Should().BeNull();
+        result.Wan.Profiles.Should().BeEmpty();
+        result.FirmwareCompatibility.Should().Be(FirmwareCompatibility.Unconfirmed);
+        result.FieldReads.Should().OnlyContain(item =>
+            item.Status == FieldReadStatus.ContractNotSatisfied || item.Status == FieldReadStatus.NotFound);
+        result.FieldReads.Should().Contain(item => item.Status == FieldReadStatus.ContractNotSatisfied);
+        result.Traces.Where(item => item.Type == "menuData").Should().OnlyContain(item => item.Outcome == "GenericXmlResponse");
+        result.Traces.Where(item => item.Type == "menuData").Select(item => item.ShortHash).Distinct().Should().HaveCount(1);
+        result.Traces.Should().NotContain(item => item.Outcome == "lido");
+        result.SessionCookiesPreserved.Should().BeTrue();
+        transport.HasSessionCookie.Should().BeTrue();
+        transport.LastCleanupReason.Should().BeNull();
+        transport.Gets.Should().HaveCount(8);
+        transport.ConfigPostCount.Should().Be(0);
+        transport.Posts.Should().BeEmpty();
+        transport.SessionToken.Should().Be("tok");
+        transport.Gets.Should().NotContain(uri => uri.Contains("_sessionTOKEN="));
+    }
+
+    [Fact]
+    public void Allowlist_accepts_observed_menuview_templates()
+    {
+        var ip = IPAddress.Parse("192.168.100.1");
+        bool Proven(string key, string name, string value)
+            => name == "Menu3Location" && value == "0";
+
+        F6201BV9310P8N1AuthContract.IsAllowedGet(
+            new Uri("https://192.168.100.1/?_type=menuView&_tag=statusMgr&Menu3Location=0&_=1"),
+            ip,
+            ["menuView:statusMgr"],
+            Proven).Should().BeTrue();
+        F6201BV9310P8N1AuthContract.IsAllowedGet(
+            new Uri("https://192.168.100.1/?_type=menuView&_tag=ethWanConfig&Menu3Location=0&_=1"),
+            ip,
+            ["menuView:ethWanConfig"],
+            Proven).Should().BeTrue();
+    }
+
+    private static int IndexOf(List<string> gets, string marker)
+        => gets.FindIndex(item => item.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
     private static void SensitiveDataMaskerShouldHide(HomologatedReadExecution result)
     {
         var serial = result.FieldReads.Single(item => item.Field == "Serial Number").SanitizedValue;
@@ -201,6 +279,7 @@ public sealed class F6201BHomologatedReadTests
     {
         public bool FailPon { get; set; }
         public bool IncompatibleFirmware { get; set; }
+        public bool GenericXml { get; set; }
         public List<string> Gets { get; } = [];
         public List<string> Posts { get; } = [];
         public IPAddress BoundAddress { get; } = IPAddress.Parse("192.168.100.1");
@@ -223,13 +302,25 @@ public sealed class F6201BHomologatedReadTests
         {
             Gets.Add(pathAndQuery);
             pathAndQuery.Should().NotContain("192.168.1.1");
+            pathAndQuery.Should().NotContain("_sessionTOKEN=");
             if (FailPon && pathAndQuery.Contains("optical_info", StringComparison.OrdinalIgnoreCase))
             {
                 return Task.FromResult(BoundHttpResult.Fail(Error.Create(ErrorCodes.ProbeTimeout, "falha parcial")));
             }
 
+            if (pathAndQuery.Contains("_type=menuView", StringComparison.OrdinalIgnoreCase))
+            {
+                const string html = "<html><body>template</body></html>";
+                var templateHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(html))).ToLowerInvariant();
+                return Task.FromResult(new BoundHttpResult(true, 200, html, "text/html; charset=utf-8", "https://192.168.100.1" + pathAndQuery, 0, templateHash, TimeSpan.Zero, null));
+            }
+
             string body;
-            if (pathAndQuery.Contains("devmgr_statusmgr", StringComparison.OrdinalIgnoreCase))
+            if (GenericXml)
+            {
+                body = Fixture("zte-f6201b-v9310p8n1-generic-ack.xml").Replace("\r\n", "\n").TrimEnd();
+            }
+            else if (pathAndQuery.Contains("devmgr_statusmgr", StringComparison.OrdinalIgnoreCase))
             {
                 body = Fixture("zte-f6201b-v9310p8n1-homologated-device.xml");
                 if (IncompatibleFirmware)

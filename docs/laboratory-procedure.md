@@ -41,7 +41,7 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 10. Após o login, o aplicativo lê automaticamente Device, PON, WAN Status e WAN Config por GET homologado. Confira as abas Dispositivo, PON e WAN. Use `Exportar diagnóstico autenticado` e confira a inspeção do ZIP.
 11. Clique em `Encerrar sessão` ao terminar. O aplicativo envia no máximo um POST de logout oficial e descarta os cookies.
 
-## Observação passiva de GETs (fallback 0.1.7-lab)
+## Observação passiva de GETs (fallback 0.1.7.1-lab)
 
 1. A leitura cotidiana **não** depende do WebView2. O observador permanece só como ferramenta de laboratório e fallback.
 2. Com a F6201B autenticada em modo laboratório, clique em `Observar navegação GET` e confirme.

@@ -57,7 +57,16 @@ public sealed class ExportObservationUseCase : IExportObservationUseCase
                 Tamanho = item.SizeBytes,
                 Hash = item.Sha256,
                 NovoOuAlterado = item.IsNewOrChanged,
-                Classificacao = item.Classification.ToString()
+                Classificacao = item.Classification.ToString(),
+                Referer = item.RequestContext?.HasReferer ?? false,
+                Origin = item.RequestContext?.HasOrigin ?? false,
+                XRequestedWith = item.RequestContext?.HasXRequestedWith ?? false,
+                Accept = item.RequestContext?.HasAccept ?? false,
+                AcceptLanguage = item.RequestContext?.HasAcceptLanguage ?? false,
+                CookieNames = item.RequestContext?.CookieNames ?? [],
+                SessionTokenPresent = item.RequestContext?.SessionTokenPresent ?? false,
+                SessionTokenLength = item.RequestContext?.SessionTokenLength ?? 0,
+                InitiatorKind = item.RequestContext?.InitiatorKind
             });
         var structures = snapshot.Structures.Select(item => new
         {

@@ -6,7 +6,8 @@ public enum FieldReadStatus
     Unavailable = 1,
     NotFound = 2,
     Partial = 3,
-    ConfirmedIncompatible = 4
+    ConfirmedIncompatible = 4,
+    ContractNotSatisfied = 5
 }
 
 public sealed record FieldReadResult(
@@ -24,6 +25,7 @@ public sealed record FieldReadResult(
             FieldReadStatus.NotFound => "Não localizado nas páginas autenticadas homologadas",
             FieldReadStatus.Partial => "Resposta parcial",
             FieldReadStatus.ConfirmedIncompatible => "Incompatibilidade confirmada",
+            FieldReadStatus.ContractNotSatisfied => "Contrato GET não satisfeito (XML genérico)",
             _ => "—"
         };
 }
@@ -40,7 +42,8 @@ public sealed record HomologatedGetTrace(
     string ShortHash,
     IReadOnlyList<string> RecognizedFields,
     IReadOnlyList<string> MissingFields,
-    string Outcome)
+    string Outcome,
+    string? XmlStructure = null)
 {
     public string ToOperatorLine()
         => string.Join(" | ", new[]
@@ -53,6 +56,7 @@ public sealed record HomologatedGetTrace(
             string.IsNullOrWhiteSpace(ShortHash) ? "—" : ShortHash,
             "reconhecidos: " + (RecognizedFields.Count == 0 ? "nenhum" : string.Join(", ", RecognizedFields)),
             "ausentes: " + (MissingFields.Count == 0 ? "nenhum" : string.Join(", ", MissingFields)),
-            Outcome
+            Outcome,
+            string.IsNullOrWhiteSpace(XmlStructure) ? "—" : XmlStructure
         });
 }

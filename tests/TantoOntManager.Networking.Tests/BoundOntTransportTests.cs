@@ -15,6 +15,39 @@ public sealed class BoundOntTransportTests
     private readonly IPAddress _ip = IPAddress.Parse("192.168.100.1");
 
     [Fact]
+    public async Task Menu_gets_reuse_login_cookie_and_only_proven_ajax_headers()
+    {
+        var handler = new ScriptedHandler();
+        MapDefaults(handler);
+        handler.Map["https://192.168.100.1/?_type=menuView&_tag=statusMgr&Menu3Location=0&_=1"] = Html("<html>view</html>");
+        handler.Map["https://192.168.100.1/?_type=menuData&_tag=devmgr_statusmgr_lua.lua&_=1"] =
+            Xml("<?xml version=\"1.0\"?><ajax_response_xml_root><IF_ERRORSTR>SUCC</IF_ERRORSTR></ajax_response_xml_root>");
+        var transport = Create(handler);
+        await transport.GetAsync("/", CancellationToken.None);
+        handler.XRequestedWith[0].Should().BeFalse();
+        await transport.GetAsync(F6201BV9310P8N1AuthContract.LoginPathAndQuery, CancellationToken.None);
+        await transport.PostLoginFormAsync(LoginForm(), CancellationToken.None);
+        transport.RememberSafeRead("menuView", "statusMgr");
+        transport.RememberProvenQueryParameters("menuView", "statusMgr", new Dictionary<string, string> { ["Menu3Location"] = "0" });
+        transport.RememberSafeRead("menuData", "devmgr_statusmgr_lua.lua");
+        var view = await transport.GetAsync("/?_type=menuView&_tag=statusMgr&Menu3Location=0&_=1", CancellationToken.None);
+        var data = await transport.GetAsync("/?_type=menuData&_tag=devmgr_statusmgr_lua.lua&_=1", CancellationToken.None);
+
+        view.Succeeded.Should().BeTrue();
+        data.Succeeded.Should().BeTrue();
+        transport.HttpClientInstanceId.Should().NotBe(0);
+        handler.CookieHeaders.Last().Should().Contain("SID_HTTPS_");
+        handler.XRequestedWith.Last().Should().BeTrue();
+        handler.HasReferer.Last().Should().BeTrue();
+        handler.HasOrigin.Last().Should().BeFalse();
+        handler.HasAcceptLanguage.Last().Should().BeFalse();
+        transport.SessionToken.Should().NotBeNullOrEmpty();
+        transport.ConfigPostCount.Should().Be(0);
+        transport.LoginPostCount.Should().Be(1);
+        data.FinalUri.Should().NotContain("_sessionTOKEN=");
+    }
+
+    [Fact]
     public async Task Logout_post_is_allowed_once_after_login()
     {
         var handler = new ScriptedHandler();
@@ -268,12 +301,20 @@ public sealed class BoundOntTransportTests
         public List<string> Methods { get; } = [];
         public List<string> Posts { get; } = [];
         public List<string> CookieHeaders { get; } = [];
+        public List<bool> XRequestedWith { get; } = [];
+        public List<bool> HasReferer { get; } = [];
+        public List<bool> HasOrigin { get; } = [];
+        public List<bool> HasAcceptLanguage { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Methods.Add(request.Method.Method);
             CookieHeaders.Add(request.Headers.TryGetValues("Cookie", out var values) ? string.Join("; ", values) : string.Empty);
+            XRequestedWith.Add(request.Headers.Contains("X-Requested-With"));
+            HasReferer.Add(request.Headers.Referrer is not null);
+            HasOrigin.Add(request.Headers.Contains("Origin"));
+            HasAcceptLanguage.Add(request.Headers.Contains("Accept-Language"));
             var key = request.RequestUri!.ToString();
             if (request.Method == HttpMethod.Post)
             {

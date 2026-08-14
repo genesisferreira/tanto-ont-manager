@@ -30,69 +30,38 @@ public static class F6201BHomologatedReadCoordinator
         var inventory = new List<SafeReadInventoryItem>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var cookieAtStart = transport.HasSessionCookie;
+        var genericScreens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var route in F6201BV9310P8N1HomologatedReadContract.Routes)
+        foreach (var screen in F6201BV9310P8N1HomologatedReadContract.Screens)
         {
-            transport.RememberProvenQueryParameters(route.Type, route.Tag, route.FixedExtras);
-            var path = F6201BV9310P8N1HomologatedReadContract.BuildPath(
-                route,
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
-            var identity = F6201BGetUrl.Identity(path);
-            if (!visited.Add(identity))
+            await FetchAsync(
+                transport,
+                screen.Template,
+                visited,
+                pages,
+                pageNames,
+                traces,
+                inventory,
+                parseBody: false,
+                cancellationToken);
+
+            var data = await FetchAsync(
+                transport,
+                screen.Data,
+                visited,
+                pages,
+                pageNames,
+                traces,
+                inventory,
+                parseBody: true,
+                cancellationToken);
+
+            if (data.Generic)
             {
-                traces.Add(Trace(transport.BoundAddress, route, path, 0, null, 0, string.Empty, [], route.ExpectedFields.ToList(), "duplicado normalizado ignorado"));
-                continue;
+                genericScreens.Add(screen.Screen);
             }
 
-            var item = F6201BV9310P8N1HomologatedReadContract.ToInventory(route);
-            var page = await transport.GetAsync(path, cancellationToken);
-            if (!page.Succeeded)
-            {
-                inventory.Add(item.WithClassification(
-                    SafeReadClassification.UnknownNotAccessed,
-                    page.Error?.Message ?? "GET homologado falhou; a sessão autenticada foi preservada.",
-                    false) with
-                {
-                    HttpStatus = page.StatusCode
-                });
-                traces.Add(Trace(
-                    transport.BoundAddress,
-                    route,
-                    path,
-                    page.StatusCode,
-                    page.ContentType,
-                    0,
-                    page.SanitizedBodySha256,
-                    [],
-                    route.ExpectedFields.ToList(),
-                    "resposta parcial"));
-                continue;
-            }
-
-            pages.Add((path, page.Body));
-            pageNames.Add(path);
-            inventory.Add(item.WithAccess(page.ContentType, page.Body.Length, page.SanitizedBodySha256) with
-            {
-                HttpStatus = page.StatusCode
-            });
-
-            var deviceSoFar = F6201BV9310P8N1DeviceInformationParser.Parse(pages.ToArray());
-            var compatibilitySoFar = F6201BFirmwareCompatibility.Classify(deviceSoFar.SoftwareVersion);
-            var recognized = Recognized(route, page.Body);
-            var missing = route.ExpectedFields.Where(field => !recognized.Contains(field, StringComparer.OrdinalIgnoreCase)).ToList();
-            traces.Add(Trace(
-                transport.BoundAddress,
-                route,
-                path,
-                page.StatusCode,
-                page.ContentType,
-                page.Body.Length,
-                page.SanitizedBodySha256,
-                recognized,
-                missing,
-                compatibilitySoFar == FirmwareCompatibility.ConfirmedIncompatible ? "firmware incompatível" : "lido"));
-
-            if (compatibilitySoFar == FirmwareCompatibility.ConfirmedIncompatible)
+            if (data.Incompatible)
             {
                 break;
             }
@@ -102,7 +71,7 @@ public static class F6201BHomologatedReadCoordinator
         var pon = F6201BV9310P8N1PonParser.Parse(pages.ToArray());
         var wan = F6201BV9310P8N1WanParser.Parse(pages.ToArray());
         var compatibility = F6201BFirmwareCompatibility.Classify(device.SoftwareVersion);
-        var fields = BuildFields(device, pon, wan, traces, compatibility);
+        var fields = BuildFields(device, pon, wan, traces, compatibility, genericScreens);
         return new HomologatedReadExecution(
             pages,
             pageNames,
@@ -116,14 +85,124 @@ public static class F6201BHomologatedReadCoordinator
             transport.HasSessionCookie == cookieAtStart || transport.HasSessionCookie);
     }
 
+    private static async Task<(bool Generic, bool Incompatible)> FetchAsync(
+        IBoundOntTransport transport,
+        HomologatedGetRoute route,
+        HashSet<string> visited,
+        List<(string Page, string Body)> pages,
+        List<string> pageNames,
+        List<HomologatedGetTrace> traces,
+        List<SafeReadInventoryItem> inventory,
+        bool parseBody,
+        CancellationToken cancellationToken)
+    {
+        transport.RememberProvenQueryParameters(route.Type, route.Tag, route.FixedExtras);
+        var path = F6201BV9310P8N1HomologatedReadContract.BuildPath(
+            route,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+        var identity = F6201BGetUrl.Identity(path);
+        if (!visited.Add(identity))
+        {
+            traces.Add(Trace(
+                transport.BoundAddress,
+                route,
+                path,
+                0,
+                null,
+                F6201BAjaxXml.Inspect(null),
+                [],
+                route.ExpectedFields.ToList(),
+                "duplicado normalizado ignorado"));
+            return (false, false);
+        }
+
+        var item = F6201BV9310P8N1HomologatedReadContract.ToInventory(route);
+        var page = await transport.GetAsync(path, cancellationToken);
+        if (!page.Succeeded)
+        {
+            inventory.Add(item.WithClassification(
+                SafeReadClassification.UnknownNotAccessed,
+                page.Error?.Message ?? "GET homologado falhou; a sessão autenticada foi preservada.",
+                false) with
+            {
+                HttpStatus = page.StatusCode
+            });
+            traces.Add(Trace(
+                transport.BoundAddress,
+                route,
+                path,
+                page.StatusCode,
+                page.ContentType,
+                F6201BAjaxXml.Inspect(null),
+                [],
+                route.ExpectedFields.ToList(),
+                "resposta parcial"));
+            return (false, false);
+        }
+
+        pageNames.Add(path);
+        inventory.Add(item.WithAccess(page.ContentType, page.Body.Length, page.SanitizedBodySha256) with
+        {
+            HttpStatus = page.StatusCode
+        });
+
+        var structure = F6201BAjaxXml.Inspect(page.Body);
+        if (!parseBody)
+        {
+            traces.Add(Trace(
+                transport.BoundAddress,
+                route,
+                path,
+                page.StatusCode,
+                page.ContentType,
+                structure,
+                [],
+                [],
+                "template menuView"));
+            return (false, false);
+        }
+
+        if (structure.IsGenericAck || !F6201BAjaxXml.SatisfiesContract(page.Body, route.CharacteristicMarkers))
+        {
+            var recognized = Recognized(route, page.Body);
+            traces.Add(Trace(
+                transport.BoundAddress,
+                route,
+                path,
+                page.StatusCode,
+                page.ContentType,
+                structure,
+                recognized,
+                route.ExpectedFields.ToList(),
+                structure.IsGenericAck ? "GenericXmlResponse" : "ContractNotSatisfied"));
+            return (true, false);
+        }
+
+        pages.Add((path, page.Body));
+        var deviceSoFar = F6201BV9310P8N1DeviceInformationParser.Parse(pages.ToArray());
+        var compatibilitySoFar = F6201BFirmwareCompatibility.Classify(deviceSoFar.SoftwareVersion);
+        var found = Recognized(route, page.Body);
+        var missing = route.ExpectedFields.Where(field => !found.Contains(field, StringComparer.OrdinalIgnoreCase)).ToList();
+        traces.Add(Trace(
+            transport.BoundAddress,
+            route,
+            path,
+            page.StatusCode,
+            page.ContentType,
+            structure,
+            found,
+            missing,
+            compatibilitySoFar == FirmwareCompatibility.ConfirmedIncompatible ? "firmware incompatível" : "lido"));
+        return (false, compatibilitySoFar == FirmwareCompatibility.ConfirmedIncompatible);
+    }
+
     private static HomologatedGetTrace Trace(
         IPAddress boundAddress,
         HomologatedGetRoute route,
         string path,
         int status,
         string? contentType,
-        int size,
-        string? hash,
+        SanitizedAjaxXmlStructure structure,
         IReadOnlyList<string> recognized,
         IReadOnlyList<string> missing,
         string outcome)
@@ -135,11 +214,12 @@ public static class F6201BHomologatedReadCoordinator
             route.ExtraNames,
             status,
             contentType,
-            size,
-            string.IsNullOrWhiteSpace(hash) ? string.Empty : hash[..Math.Min(12, hash.Length)],
+            structure.SizeBytes,
+            structure.ShortHash,
             recognized,
             missing,
-            outcome);
+            outcome,
+            structure.ToOperatorText());
 
     private static Uri ToUri(IPAddress boundAddress, string path)
         => Uri.TryCreate($"https://{boundAddress}{path}", UriKind.Absolute, out var uri)
@@ -182,35 +262,37 @@ public static class F6201BHomologatedReadCoordinator
         F6201BParsedPonStatus pon,
         F6201BParsedWanSummary wan,
         IReadOnlyList<HomologatedGetTrace> traces,
-        FirmwareCompatibility compatibility)
+        FirmwareCompatibility compatibility,
+        IReadOnlySet<string> genericScreens)
     {
-        var deviceTrace = traces.FirstOrDefault(item => item.Screen == "Device");
-        var ponTrace = traces.FirstOrDefault(item => item.Screen == "PON");
-        var wanTraces = traces.Where(item => item.Screen.StartsWith("WAN", StringComparison.Ordinal)).ToList();
+        var deviceTrace = traces.LastOrDefault(item => item.Screen == "Device" && item.Type == "menuData");
+        var ponTrace = traces.LastOrDefault(item => item.Screen == "PON" && item.Type == "menuData");
+        var wanTraces = traces.Where(item => item.Screen.StartsWith("WAN", StringComparison.Ordinal) && item.Type == "menuData").ToList();
         var devicePartial = deviceTrace?.Outcome == "resposta parcial";
         var ponPartial = ponTrace?.Outcome == "resposta parcial";
         var wanPartial = wanTraces.Count > 0 && wanTraces.All(item => item.Outcome == "resposta parcial");
 
         var list = new List<FieldReadResult>
         {
-            Field("Device Type", device.DeviceType, deviceTrace, device.Evidence, devicePartial, compatibility, value => value ?? string.Empty),
-            Field("Hardware Version", device.HardwareVersion, deviceTrace, device.Evidence, devicePartial, compatibility, value => value ?? string.Empty),
-            Field("Software Version", device.SoftwareVersion, deviceTrace, device.Evidence, devicePartial, compatibility, value => value ?? string.Empty),
-            Field("Boot Version", device.BootVersion, deviceTrace, device.Evidence, devicePartial, compatibility, value => value ?? string.Empty),
-            Field("Serial Number", device.SerialNumber, deviceTrace, device.Evidence, devicePartial, compatibility, SensitiveDataMasker.MaskSerial),
-            Field("MAC Address", device.MacAddress, deviceTrace, device.Evidence, devicePartial, compatibility, SensitiveDataMasker.MaskMac),
-            Field("ONU State", pon.OnuState, ponTrace, pon.Evidence, ponPartial, compatibility, value => value ?? string.Empty),
-            Field("Input Power", pon.InputPower, ponTrace, pon.Evidence, ponPartial, compatibility, value => value ?? string.Empty),
-            Field("Output Power", pon.OutputPower, ponTrace, pon.Evidence, ponPartial, compatibility, value => value ?? string.Empty),
-            Field("Supply Voltage", pon.Voltage, ponTrace, pon.Evidence, ponPartial, compatibility, value => value ?? string.Empty),
-            Field("Transmitter Bias Current", pon.BiasCurrent, ponTrace, pon.Evidence, ponPartial, compatibility, value => value ?? string.Empty),
-            Field("Temperature", pon.Temperature, ponTrace, pon.Evidence, ponPartial, compatibility, value => value ?? string.Empty),
-            Field("LOID", pon.Loid, ponTrace, pon.Evidence, ponPartial, compatibility, SensitiveDataMasker.MaskUsername)
+            Field("Device Type", device.DeviceType, deviceTrace, device.Evidence, devicePartial, compatibility, genericScreens.Contains("Device"), value => value ?? string.Empty),
+            Field("Hardware Version", device.HardwareVersion, deviceTrace, device.Evidence, devicePartial, compatibility, genericScreens.Contains("Device"), value => value ?? string.Empty),
+            Field("Software Version", device.SoftwareVersion, deviceTrace, device.Evidence, devicePartial, compatibility, genericScreens.Contains("Device"), value => value ?? string.Empty),
+            Field("Boot Version", device.BootVersion, deviceTrace, device.Evidence, devicePartial, compatibility, genericScreens.Contains("Device"), value => value ?? string.Empty),
+            Field("Serial Number", device.SerialNumber, deviceTrace, device.Evidence, devicePartial, compatibility, genericScreens.Contains("Device"), SensitiveDataMasker.MaskSerial),
+            Field("MAC Address", device.MacAddress, deviceTrace, device.Evidence, devicePartial, compatibility, genericScreens.Contains("Device"), SensitiveDataMasker.MaskMac),
+            Field("ONU State", pon.OnuState, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
+            Field("Input Power", pon.InputPower, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
+            Field("Output Power", pon.OutputPower, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
+            Field("Supply Voltage", pon.Voltage, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
+            Field("Transmitter Bias Current", pon.BiasCurrent, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
+            Field("Temperature", pon.Temperature, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), value => value ?? string.Empty),
+            Field("LOID", pon.Loid, ponTrace, pon.Evidence, ponPartial, compatibility, genericScreens.Contains("PON"), SensitiveDataMasker.MaskUsername)
         };
 
         if (wan.Profiles.Count == 0)
         {
-            list.Add(Field("WAN profiles", null, wanTraces.FirstOrDefault(), wan.Evidence, wanPartial, compatibility, value => value ?? string.Empty));
+            var wanGeneric = genericScreens.Contains("WAN Status") || genericScreens.Contains("WAN Config");
+            list.Add(Field("WAN profiles", null, wanTraces.FirstOrDefault(), wan.Evidence, wanPartial, compatibility, wanGeneric, value => value ?? string.Empty));
         }
 
         return list;
@@ -223,12 +305,23 @@ public static class F6201BHomologatedReadCoordinator
         IReadOnlyList<FieldEvidence> evidence,
         bool pagePartial,
         FirmwareCompatibility compatibility,
+        bool genericXml,
         Func<string?, string> sanitize)
     {
         if (compatibility == FirmwareCompatibility.ConfirmedIncompatible
             && name is not "Software Version" and not "Device Type" and not "Hardware Version" and not "Boot Version" and not "Serial Number" and not "MAC Address")
         {
             return new FieldReadResult(name, null, trace?.LogicalEndpoint, "leitura encerrada", FieldReadStatus.ConfirmedIncompatible);
+        }
+
+        if (genericXml && string.IsNullOrWhiteSpace(value))
+        {
+            return new FieldReadResult(
+                name,
+                null,
+                trace?.LogicalEndpoint,
+                trace?.XmlStructure,
+                FieldReadStatus.ContractNotSatisfied);
         }
 
         if (pagePartial && string.IsNullOrWhiteSpace(value))

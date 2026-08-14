@@ -132,7 +132,8 @@ public sealed class ObservationEngine : IDisposable
                 classification,
                 isBaseline && !_baselineClosed,
                 isNewOrChanged,
-                normalized);
+                normalized,
+                request.RequestContext ?? ObservedRequestContext.Empty);
 
             _gets.Add(record);
             if (classification == ObservedGetClassification.DataEndpoint && !string.IsNullOrEmpty(body))
@@ -280,12 +281,13 @@ public sealed class ObservationEngine : IDisposable
     {
         var lines = new List<string>
         {
-            "Tela | Ordem | GET | Tipo/tag | Extras | HTTP | Content-Type | Tamanho | Hash | Novo/alterado | Classificação"
+            "Tela | Ordem | GET | Tipo/tag | Extras | HTTP | Content-Type | Tamanho | Hash | Novo/alterado | Classificação | Referer | Origin | X-Requested-With | Accept | Accept-Language | Cookies | TokenQuery | TokenLen | Iniciador"
         };
         lock (_gate)
         {
             foreach (var item in _gets)
             {
+                var context = item.RequestContext ?? ObservedRequestContext.Empty;
                 var extras = item.ExtraParameterNames.Count == 0
                     ? "—"
                     : string.Join(",", item.ExtraParameterNames);
@@ -303,7 +305,16 @@ public sealed class ObservationEngine : IDisposable
                     item.SizeBytes.ToString(),
                     item.Sha256.Length <= 12 ? item.Sha256 : item.Sha256[..12],
                     item.IsNewOrChanged ? "sim" : (item.IsBaseline ? "baseline" : "não"),
-                    item.Classification.ToString()
+                    item.Classification.ToString(),
+                    context.HasReferer ? "sim" : "não",
+                    context.HasOrigin ? "sim" : "não",
+                    context.HasXRequestedWith ? "sim" : "não",
+                    context.HasAccept ? "sim" : "não",
+                    context.HasAcceptLanguage ? "sim" : "não",
+                    context.CookieNames.Count == 0 ? "—" : string.Join(",", context.CookieNames),
+                    context.SessionTokenPresent ? "sim" : "não",
+                    context.SessionTokenLength.ToString(),
+                    string.IsNullOrWhiteSpace(context.InitiatorKind) ? "—" : context.InitiatorKind
                 }));
             }
         }

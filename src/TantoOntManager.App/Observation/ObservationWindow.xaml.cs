@@ -252,7 +252,11 @@ public partial class ObservationWindow : Window
             }
 
             _engine.CompleteGet(
-                new IncomingObservationRequest(method, uri, Initiator: TryHeader(args.Request.Headers, "Referer")),
+                new IncomingObservationRequest(
+                    method,
+                    uri,
+                    Initiator: TryHeader(args.Request.Headers, "Referer"),
+                    RequestContext: ReadRequestContext(args.Request.Headers, uri)),
                 args.Response.StatusCode,
                 TryHeader(args.Response.Headers, "Content-Type"),
                 body,
@@ -269,6 +273,64 @@ public partial class ObservationWindow : Window
     {
         var empty = new MemoryStream(Encoding.UTF8.GetBytes("blocked"));
         return WebView.CoreWebView2.Environment.CreateWebResourceResponse(empty, 403, "Blocked", "Content-Type: text/plain");
+    }
+
+    private static ObservedRequestContext ReadRequestContext(CoreWebView2HttpRequestHeaders headers, Uri uri)
+    {
+        var cookieNames = ReadCookieNames(headers);
+        var query = ObservationUrl.ParseQuery(uri.Query);
+        var tokenPresent = query.Keys.Any(key => key.Equals("_sessionTOKEN", StringComparison.OrdinalIgnoreCase));
+        var tokenLength = 0;
+        if (tokenPresent && query.TryGetValue("_sessionTOKEN", out var token))
+        {
+            tokenLength = token.Length;
+        }
+
+        var xhr = HeaderPresent(headers, "X-Requested-With");
+        return new ObservedRequestContext(
+            HeaderPresent(headers, "Referer"),
+            HeaderPresent(headers, "Origin"),
+            xhr,
+            HeaderPresent(headers, "Accept"),
+            HeaderPresent(headers, "Accept-Language"),
+            cookieNames,
+            tokenPresent,
+            tokenLength,
+            xhr ? "xhr" : "other");
+    }
+
+    private static IReadOnlyList<string> ReadCookieNames(CoreWebView2HttpRequestHeaders headers)
+    {
+        if (!HeaderPresent(headers, "Cookie"))
+        {
+            return [];
+        }
+
+        try
+        {
+            var header = headers.GetHeader("Cookie");
+            return header.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => part.Split('=', 2)[0].Trim())
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            return [];
+        }
+    }
+
+    private static bool HeaderPresent(CoreWebView2HttpRequestHeaders headers, string name)
+    {
+        try
+        {
+            return headers.Contains(name);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static string? TryHeader(CoreWebView2HttpRequestHeaders headers, string name)
