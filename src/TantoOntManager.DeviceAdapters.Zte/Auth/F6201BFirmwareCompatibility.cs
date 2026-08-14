@@ -185,6 +185,9 @@ public static class F6201BFirmwareCompatibility
         return UnavailableTokens.Contains(compact);
     }
 
+    public static bool IsExactSoftwareFirmwareField(string? name)
+        => F6201BFieldAssociation.IsExactSoftwareFirmwareField(name);
+
     private static string Normalize(string value)
         => Regex.Replace(value.Trim(), @"\s+", string.Empty);
 }

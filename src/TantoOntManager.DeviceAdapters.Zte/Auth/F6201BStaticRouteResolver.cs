@@ -364,7 +364,8 @@ public static class F6201BStaticRouteResolver
             return AuthenticatedRouteKind.MenuFolder;
         }
 
-        if (F6201BTagSafety.IsBlocked(tag))
+        if (F6201BTagSafety.IsBlocked(tag)
+            || (F6201BTagSafety.HasConfigToken(tag) && !F6201BTagSafety.IsMenuViewConfigTemplate(type, tag)))
         {
             return AuthenticatedRouteKind.ActionEndpoint;
         }

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+var menuTreeJSON = [
+  {"id":"firewall","name":"Firewall","children":[
+    {"id":"firewallFilter","name":"Filter"}
+  ]},
+  {"id":"voip","name":"VoIP","children":[
+    {"id":"voipStatus","name":"Status"}
+  ]},
+  {"id":"mgrAndDiag","name":"Management & Diagnosis","children":[
+    {"id":"statusMgr","name":"Status"}
+  ]},
+  {"id":"internet","name":"Internet","children":[
+    {"id":"ponOpticalInfo","name":"PON Inform"},
+    {"id":"ponSn","name":"SN"},
+    {"id":"ponLoid","name":"LOID"},
+    {"id":"wanFolder","name":"Status","children":[
+      {"id":"ethWanStatus","name":"WAN"}
+    ]},
+    {"id":"internetConfig","name":"WAN","children":[
+      {"id":"ethWanConfig","name":"WAN"}
+    ]}
+  ]}
+];
+var apply = "/?_type=menuView&_tag=wan_apply";
+var save = "/?_type=menuData&_tag=wanSave";
+</script>
+</body>
+</html>

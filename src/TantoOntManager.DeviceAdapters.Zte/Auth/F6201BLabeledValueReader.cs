@@ -48,6 +48,22 @@ public static class F6201BLabeledValueReader
                ?? ParsedField.Missing;
     }
 
+    public static ParsedField ReadExact(string pageName, string html, params string[] labelsAndKeys)
+    {
+        if (string.IsNullOrWhiteSpace(html) || labelsAndKeys.Length == 0)
+        {
+            return ParsedField.Missing;
+        }
+
+        var decoded = F6201BHtmlText.Decode(html);
+        return ReadJsonExact(pageName, decoded, labelsAndKeys)
+               ?? ReadTransferMeaningExact(pageName, decoded, labelsAndKeys)
+               ?? ReadTablePairsExact(pageName, decoded, labelsAndKeys)
+               ?? ReadNamedNodesExact(pageName, decoded, labelsAndKeys)
+               ?? ReadExactColonLabel(pageName, decoded, labelsAndKeys)
+               ?? ParsedField.Missing;
+    }
+
     public static IReadOnlyList<IReadOnlyDictionary<string, string>> ReadJsonObjectArrays(string html)
     {
         var result = new List<IReadOnlyDictionary<string, string>>();
@@ -205,6 +221,131 @@ public static class F6201BLabeledValueReader
                         value,
                         new FieldEvidence(label, value, pageName, "normalized-label", F6201BHtmlText.SnippetAround(text, label)));
                 }
+            }
+        }
+
+        return null;
+    }
+
+    private static ParsedField? ReadJsonExact(string pageName, string html, string[] labelsAndKeys)
+    {
+        foreach (var obj in ReadJsonObjectArrays(html))
+        {
+            foreach (var key in labelsAndKeys)
+            {
+                foreach (var pair in obj)
+                {
+                    if (F6201BFieldAssociation.NamesEqual(pair.Key, key)
+                        && !IsSecretKey(pair.Key)
+                        && F6201BFieldAssociation.IsUsableScalar(pair.Value))
+                    {
+                        return F6201BFieldAssociation.Evidence(key, pair.Value, pageName, "json-property", pair.Key, null);
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static ParsedField? ReadTransferMeaningExact(string pageName, string html, string[] labelsAndKeys)
+    {
+        foreach (Match match in TransferMeaning.Matches(html))
+        {
+            var key = match.Groups[1].Value;
+            var value = match.Groups[2].Value.Trim();
+            if (!F6201BFieldAssociation.IsUsableScalar(value) || IsSecretKey(key))
+            {
+                continue;
+            }
+
+            if (labelsAndKeys.Any(label => F6201BFieldAssociation.NamesEqual(key, label)))
+            {
+                return F6201BFieldAssociation.Evidence(key, value, pageName, "transfer-meaning", key, null);
+            }
+        }
+
+        return null;
+    }
+
+    private static ParsedField? ReadTablePairsExact(string pageName, string html, string[] labelsAndKeys)
+    {
+        var rows = Regex.Split(html, "(?i)</tr>");
+        foreach (var row in rows)
+        {
+            var cells = Regex.Matches(row, "(?is)<t[dh][^>]*>(.*?)</t[dh]>")
+                .Select(match => F6201BHtmlText.Normalize(Regex.Replace(match.Groups[1].Value, "(?is)<[^>]+>", " ")))
+                .Where(text => !string.IsNullOrWhiteSpace(text))
+                .ToList();
+            if (cells.Count < 2)
+            {
+                continue;
+            }
+
+            var label = cells[0];
+            var value = cells[1];
+            if (labelsAndKeys.Any(candidate => F6201BFieldAssociation.NamesEqual(label, candidate))
+                && !LooksLikeSecretLabel(label)
+                && F6201BFieldAssociation.IsUsableScalar(value))
+            {
+                return F6201BFieldAssociation.Evidence(label, value, pageName, "html-table", label, null);
+            }
+        }
+
+        return null;
+    }
+
+    private static ParsedField? ReadNamedNodesExact(string pageName, string html, string[] labelsAndKeys)
+    {
+        foreach (Match match in InputValue.Matches(html))
+        {
+            var id = match.Groups["id"].Value;
+            var value = F6201BHtmlText.Normalize(match.Groups["value"].Value);
+            if (!F6201BFieldAssociation.IsUsableScalar(value) || IsSecretKey(id))
+            {
+                continue;
+            }
+
+            if (labelsAndKeys.Any(label => F6201BFieldAssociation.NamesEqual(id, label)))
+            {
+                return F6201BFieldAssociation.Evidence(id, value, pageName, "input-value", id, null);
+            }
+        }
+
+        foreach (Match match in IdValue.Matches(html))
+        {
+            var id = match.Groups["id"].Value;
+            var value = F6201BHtmlText.Normalize(match.Groups["inner"].Value);
+            if (!F6201BFieldAssociation.IsUsableScalar(value) || IsSecretKey(id))
+            {
+                continue;
+            }
+
+            if (labelsAndKeys.Any(label => F6201BFieldAssociation.NamesEqual(id, label)))
+            {
+                return F6201BFieldAssociation.Evidence(id, value, pageName, "element-id", id, null);
+            }
+        }
+
+        return null;
+    }
+
+    private static ParsedField? ReadExactColonLabel(string pageName, string html, string[] labelsAndKeys)
+    {
+        var text = F6201BHtmlText.InnerText(html);
+        foreach (var label in labelsAndKeys)
+        {
+            var pattern = $@"(?i)(?<![A-Za-z0-9]){Regex.Escape(label)}\s*[:：=]\s*(.+?)(?=\s+(?:Hardware|Software|Boot|Serial|MAC|ONU|Device|Temperature)\b|$)";
+            var match = Regex.Match(text, pattern);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var value = F6201BHtmlText.Normalize(match.Groups[1].Value);
+            if (F6201BFieldAssociation.IsUsableScalar(value) && !LooksLikeSecretLabel(label))
+            {
+                return F6201BFieldAssociation.Evidence(label, value, pageName, "exact-label", label, null);
             }
         }
 

@@ -229,6 +229,26 @@ public static class F6201BSafeReadDiscovery
             };
         }
 
+        if (F6201BTagSafety.HasConfigToken(tag) && !F6201BTagSafety.IsMenuViewConfigTemplate(normalizedType, tag))
+        {
+            return itemBase with
+            {
+                Classification = SafeReadClassification.BlockedPotentialAction,
+                ClassificationReason = "GET de dados de configuração não comprovado como leitura; apenas menuView GET de template é permitido.",
+                RouteKind = AuthenticatedRouteKind.ActionEndpoint
+            };
+        }
+
+        if (F6201BTagSafety.IsMenuViewConfigTemplate(normalizedType, tag))
+        {
+            return itemBase with
+            {
+                Classification = SafeReadClassification.SafeRead,
+                ClassificationReason = "GET de template evidenciado no menu; escrita permanece bloqueada.",
+                RouteKind = AuthenticatedRouteKind.MenuLeaf
+            };
+        }
+
         if (folder || kind == AuthenticatedRouteKind.MenuFolder)
         {
             return itemBase with

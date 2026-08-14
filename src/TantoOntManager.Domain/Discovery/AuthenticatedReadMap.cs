@@ -37,6 +37,8 @@ public sealed record AuthenticatedReadMap(
     int ConfigPostCount,
     string Note)
 {
+    public IReadOnlyList<DirectedReadStep> DirectedReads { get; init; } = [];
+
     public int TotalCandidates => Entries.Count;
 
     public int SafeReadCount => Entries.Count(item => item.Classification == SafeReadClassification.SafeRead);
@@ -57,13 +59,41 @@ public sealed record AuthenticatedReadMap(
             $"POST login: {LoginPostCount}",
             $"POST logout: {LogoutPostCount}",
             $"POST configuração: {ConfigPostCount}",
-            "Prioritárias encontradas: " + (PriorityFound.Count == 0 ? "nenhuma" : string.Join("; ", PriorityFound)),
-            "Prioritárias ausentes: " + (PriorityMissing.Count == 0 ? "nenhuma" : string.Join("; ", PriorityMissing)),
-            "Padrões sem tag literal: " + (UnresolvedPatterns.Count == 0 ? "nenhum" : string.Join("; ", UnresolvedPatterns)),
-            Note,
-            string.Empty,
-            "Texto do menu | _type | _tag | Extras | Kind | Confiança | Variável | Origem | Classificação | Motivo | HTTP | Content-Type | Tamanho | Hash | Trecho"
+            "Prioritárias encontradas: " + (PriorityFound.Count == 0 ? "nenhuma" : string.Join("; ", PriorityFound))
         };
+        if (PriorityMissing.Count > 0)
+        {
+            lines.Add("Prioritárias ausentes: " + string.Join("; ", PriorityMissing));
+        }
+
+        lines.Add(UnresolvedPatterns.Count == 0
+            ? "Padrões sem tag literal: nenhum"
+            : "Padrões sem tag literal: " + string.Join("; ", UnresolvedPatterns));
+        lines.Add(Note);
+        lines.Add(string.Empty);
+        lines.Add("Leitura dirigida");
+        if (DirectedReads.Count == 0)
+        {
+            lines.Add("Nenhuma leitura dirigida registrada.");
+        }
+        else
+        {
+            foreach (var step in DirectedReads)
+            {
+                lines.Add(string.Join(" | ", new[]
+                {
+                    step.Priority,
+                    step.StartPage,
+                    string.IsNullOrWhiteSpace(step.DataEndpoint) ? "—" : step.DataEndpoint,
+                    step.Result,
+                    string.IsNullOrWhiteSpace(step.MissingReason) ? "—" : step.MissingReason,
+                    $"orçamento {step.GetsUsed}/{step.GetBudget}"
+                }));
+            }
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("Texto do menu | _type | _tag | Extras | Kind | Confiança | Variável | Origem | Classificação | Motivo | HTTP | Content-Type | Tamanho | Hash | Trecho");
 
         foreach (var item in Entries)
         {

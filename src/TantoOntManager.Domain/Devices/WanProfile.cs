@@ -12,7 +12,10 @@ public sealed record WanProfile(
     int? Priority8021p,
     string? ConnectionState,
     string? DisconnectReason,
-    string? Ipv4Address)
+    string? Ipv4Address,
+    string? MacAddress = null,
+    string? PppoeUsername = null,
+    bool? VlanEnabled = null)
 {
     public string Summary
         => string.Join(" · ", new[]

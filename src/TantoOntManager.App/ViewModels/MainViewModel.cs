@@ -82,6 +82,8 @@ public sealed class MainViewModel : ViewModelBase
     private string _readMapText = "Mapa de leituras autenticadas indisponível até clicar em Mapear leituras.";
     private string _voltage = "—";
     private string _biasCurrent = "—";
+    private string _loid = "—";
+    private string _gponSerial = "—";
     private string _sessionPhase = "Detecção pública";
 
     public MainViewModel(
@@ -295,6 +297,8 @@ public sealed class MainViewModel : ViewModelBase
     public string ReadMapText { get => _readMapText; set => SetProperty(ref _readMapText, value); }
     public string Voltage { get => _voltage; set => SetProperty(ref _voltage, value); }
     public string BiasCurrent { get => _biasCurrent; set => SetProperty(ref _biasCurrent, value); }
+    public string Loid { get => _loid; set => SetProperty(ref _loid, value); }
+    public string GponSerial { get => _gponSerial; set => SetProperty(ref _gponSerial, value); }
     public string SessionPhase { get => _sessionPhase; set => SetProperty(ref _sessionPhase, value); }
 
     public SecureString Password { get; private set; } = new();
@@ -381,7 +385,7 @@ public sealed class MainViewModel : ViewModelBase
             {
                 Pon = diagnostics.Pon.OnuState ?? diagnostics.Pon.Description ?? "—";
                 Temperature = diagnostics.Optical.Temperature ?? "Não disponível na interface pública";
-                OpticalPower = FormatOptical(diagnostics.Optical);
+                OpticalPower = FormatOptical(diagnostics.Optical, false);
                 WanProfiles = diagnostics.WanProfiles.Count == 0
                     ? diagnostics.AvailabilityNote
                     : string.Join(Environment.NewLine, diagnostics.WanProfiles.Select(profile => profile.Summary));
@@ -657,19 +661,27 @@ public sealed class MainViewModel : ViewModelBase
     {
         Manufacturer = snapshot.Identity.Manufacturer;
         Model = snapshot.Identity.Model ?? Model;
-        Hardware = snapshot.Identity.Firmware.HardwareVersion ?? Hardware;
-        Firmware = snapshot.Identity.Firmware.SoftwareVersion ?? Firmware;
-        Boot = snapshot.Identity.Firmware.BootVersion ?? Boot;
-        Serial = SensitiveDataMasker.MaskSerial(snapshot.Identity.SerialNumber);
-        Mac = SensitiveDataMasker.MaskMac(snapshot.Identity.MacAddress);
-        Pon = snapshot.Diagnostics.Pon.OnuState ?? snapshot.Diagnostics.Pon.Description ?? Pon;
-        Temperature = snapshot.Diagnostics.Optical.Temperature ?? Temperature;
-        Voltage = snapshot.Diagnostics.Optical.Voltage ?? "—";
-        BiasCurrent = snapshot.Diagnostics.Optical.BiasCurrent ?? "—";
-        OpticalPower = FormatOptical(snapshot.Diagnostics.Optical);
+        Hardware = FirmwareInfo.Display(snapshot.Identity.Firmware.HardwareVersion, true);
+        Firmware = FirmwareInfo.Display(snapshot.Identity.Firmware.SoftwareVersion, true);
+        Boot = FirmwareInfo.Display(snapshot.Identity.Firmware.BootVersion, true);
+        Serial = snapshot.Identity.SerialNumber is null
+            ? FirmwareInfo.AuthenticatedMissing
+            : SensitiveDataMasker.MaskSerial(snapshot.Identity.SerialNumber);
+        Mac = snapshot.Identity.MacAddress is null
+            ? FirmwareInfo.AuthenticatedMissing
+            : SensitiveDataMasker.MaskMac(snapshot.Identity.MacAddress);
+        Pon = PonState.FormatOnuState(snapshot.Diagnostics.Pon.OnuState, true);
+        Temperature = FirmwareInfo.Display(snapshot.Diagnostics.Optical.Temperature, true);
+        Voltage = FirmwareInfo.Display(snapshot.Diagnostics.Optical.Voltage, true);
+        BiasCurrent = FirmwareInfo.Display(snapshot.Diagnostics.Optical.BiasCurrent, true);
+        Loid = FirmwareInfo.Display(snapshot.Diagnostics.Pon.Loid, true);
+        GponSerial = snapshot.Diagnostics.Pon.GponSerial is null
+            ? FirmwareInfo.AuthenticatedMissing
+            : SensitiveDataMasker.MaskSerial(snapshot.Diagnostics.Pon.GponSerial);
+        OpticalPower = FormatOptical(snapshot.Diagnostics.Optical, true);
         WanProfiles = snapshot.Diagnostics.WanProfiles.Count == 0
-            ? snapshot.Diagnostics.WanSummary ?? WanProfiles
-            : string.Join(Environment.NewLine, snapshot.Diagnostics.WanProfiles.Select(FormatWan));
+            ? FirmwareInfo.AuthenticatedMissing
+            : string.Join(Environment.NewLine + Environment.NewLine, snapshot.Diagnostics.WanProfiles.Select(FormatWan));
         LoginPostCount = snapshot.LoginPostCount.ToString();
         LogoutPostCount = snapshot.LogoutPostCount.ToString();
         ConfigPostCount = snapshot.ConfigPostCount.ToString();
@@ -694,21 +706,54 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     private static string FormatWan(WanProfile profile)
-        => string.Join(" · ", new[]
+        => string.Join(Environment.NewLine, new[]
         {
-            profile.Name,
-            profile.Mode,
-            profile.ServiceList,
-            profile.LinkType,
-            profile.AddressFamily,
-            profile.IpType,
-            profile.NatEnabled is null ? null : (profile.NatEnabled.Value ? "NAT" : "sem NAT"),
-            profile.VlanId is null ? null : $"VLAN {profile.VlanId}",
-            profile.Priority8021p is null ? null : $"802.1p {profile.Priority8021p}",
-            profile.ConnectionState,
-            profile.Ipv4Address,
-            profile.DisconnectReason
+            "Connection Name: " + profile.Name,
+            profile.Mode is null ? null : "Type: " + profile.Mode,
+            profile.ServiceList is null ? null : "Service List: " + profile.ServiceList,
+            profile.LinkType is null ? null : "Link Type: " + profile.LinkType,
+            profile.AddressFamily is null ? null : "IP Version: " + profile.AddressFamily,
+            profile.IpType is null ? null : "IPv4 Type: " + profile.IpType,
+            profile.NatEnabled is null ? null : "NAT: " + (profile.NatEnabled.Value ? "enabled" : "disabled"),
+            profile.VlanEnabled is null ? null : "VLAN enabled: " + (profile.VlanEnabled.Value ? "yes" : "no"),
+            profile.VlanId is null ? null : "VLAN ID: " + profile.VlanId,
+            profile.Priority8021p is null ? null : "802.1p: " + profile.Priority8021p,
+            profile.ConnectionState is null ? null : "IPv4 status: " + profile.ConnectionState,
+            profile.DisconnectReason is null ? null : "Disconnect: " + profile.DisconnectReason,
+            profile.Ipv4Address is null ? null : "IP: " + profile.Ipv4Address,
+            profile.MacAddress is null ? null : "MAC: " + profile.MacAddress,
+            profile.PppoeUsername is null ? null : "PPPoE user: " + profile.PppoeUsername
         }.Where(part => !string.IsNullOrWhiteSpace(part)));
+
+    private static string FormatOptical(OpticalReading optical, bool authenticated)
+    {
+        var tx = ScalarOrNull(optical.TxPower);
+        var rx = ScalarOrNull(optical.RxPower);
+        if (tx is null && rx is null)
+        {
+            return authenticated ? FirmwareInfo.AuthenticatedMissing : FirmwareInfo.PublicMissing;
+        }
+
+        return $"Tx {tx ?? "—"} / Rx {rx ?? "—"}";
+    }
+
+    private static string? ScalarOrNull(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Contains('<') || value.Length > 96)
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (!trimmed.Any(char.IsDigit)
+            && (trimmed.Contains("Transmit", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Contains("Receive", StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        return trimmed;
+    }
 
     private bool CanLogin()
         => !IsBusy
@@ -910,14 +955,4 @@ public sealed class MainViewModel : ViewModelBase
         => duration.TotalSeconds < 1
             ? $"{duration.TotalMilliseconds:0} ms"
             : $"{duration.TotalSeconds:0.0} s";
-
-    private static string FormatOptical(OpticalReading optical)
-    {
-        if (optical.TxPower is null && optical.RxPower is null)
-        {
-            return "Não disponível na interface pública";
-        }
-
-        return $"Tx {optical.TxPower ?? "—"} / Rx {optical.RxPower ?? "—"}";
-    }
 }

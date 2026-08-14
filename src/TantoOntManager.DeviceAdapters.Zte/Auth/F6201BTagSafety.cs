@@ -12,9 +12,14 @@ public static class F6201BTagSafety
         "chgpwd"
     };
 
+    private static readonly HashSet<string> ConfigTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "config", "configure"
+    };
+
     private static readonly HashSet<string> DubiousTokens = new(StringComparer.OrdinalIgnoreCase)
     {
-        "settings", "config", "configure", "editor"
+        "settings", "editor"
     };
 
     private static readonly HashSet<string> LongUnambiguous = new(StringComparer.OrdinalIgnoreCase)
@@ -24,6 +29,24 @@ public static class F6201BTagSafety
 
     public static bool IsBlocked(string? tag)
         => Classify(tag).Blocked;
+
+    public static bool HasConfigToken(string? tag)
+        => Tokenize(tag ?? string.Empty).Any(token => ConfigTokens.Contains(token));
+
+    public static bool IsMutationAction(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            return true;
+        }
+
+        return Tokenize(tag).Any(token => DestructiveTokens.Contains(token));
+    }
+
+    public static bool IsMenuViewConfigTemplate(string type, string? tag)
+        => string.Equals(type, "menuView", StringComparison.OrdinalIgnoreCase)
+           && HasConfigToken(tag)
+           && !IsMutationAction(tag);
 
     public static (bool Blocked, string Reason) Classify(string? tag)
     {

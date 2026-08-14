@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<body>
+<div class="tab">
+  <a MenuPage="devBasicStatus">Device Information</a>
+</div>
+<script>
+$.getJSON("/?_type=menuData&_tag=devBasicStatus");
+function openLink(pageurl) {
+  var PageName = "/?_type=menuView&_tag=" + pageurl;
+}
+openLink("devBasicStatus");
+</script>
+</body>
+</html>

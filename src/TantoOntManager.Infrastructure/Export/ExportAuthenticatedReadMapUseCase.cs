@@ -57,6 +57,15 @@ public sealed class ExportAuthenticatedReadMapUseCase : IExportAuthenticatedRead
             ConfigPostCount = map.ConfigPostCount,
             PrioritariasEncontradas = map.PriorityFound,
             PrioritariasAusentes = map.PriorityMissing,
+            LeituraDirigida = map.DirectedReads.Select(item => new
+            {
+                item.Priority,
+                PaginaInicial = item.StartPage,
+                EndpointDados = item.DataEndpoint,
+                item.Result,
+                MotivoAusente = item.MissingReason,
+                Orcamento = item.GetsUsed + "/" + item.GetBudget
+            }),
             PadroesSemTagLiteral = map.UnresolvedPatterns,
             Nota = map.Note,
             Entradas = map.Entries.Select(item => new

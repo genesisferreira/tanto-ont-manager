@@ -25,6 +25,12 @@ public sealed class AuthenticatedReadMapTests
         F6201BTagSafety.Tokenize("offset").Should().Equal("offset");
         F6201BTagSafety.IsBlocked("offset").Should().BeFalse();
         F6201BTagSafety.IsBlocked("ethWanStatus").Should().BeFalse();
+        F6201BTagSafety.IsBlocked("ethWanConfig").Should().BeFalse();
+        F6201BTagSafety.IsMenuViewConfigTemplate("menuView", "ethWanConfig").Should().BeTrue();
+        F6201BTagSafety.IsMenuViewConfigTemplate("menuData", "ethWanConfig").Should().BeFalse();
+        F6201BTagSafety.IsBlocked("wan_apply").Should().BeTrue();
+        F6201BTagSafety.IsBlocked("wanSave").Should().BeTrue();
+        F6201BTagSafety.IsBlocked("wanModify").Should().BeTrue();
         F6201BTagSafety.IsBlocked("setWan").Should().BeTrue();
         F6201BTagSafety.IsBlocked("accountMgr").Should().BeTrue();
         F6201BTagSafety.IsBlocked("settings").Should().BeTrue();
@@ -88,6 +94,8 @@ public sealed class AuthenticatedReadMapTests
         result.Map.PriorityFound.Should().Contain(F6201BPriorityMenu.DeviceStatus);
         result.Map.PriorityFound.Should().Contain(F6201BPriorityMenu.PonInformation);
         result.Map.PriorityMissing.Should().BeEmpty();
+        result.Map.ToOperatorText().Should().NotContain("Prioritárias ausentes");
+        result.Map.DirectedReads.Should().NotBeEmpty();
         result.Snapshot.Identity.Firmware.HardwareVersion.Should().Be("V9.3.12");
         result.Snapshot.FirmwareCompatibility.Should().Be(FirmwareCompatibility.ConfirmedCompatible);
         result.Snapshot.Diagnostics.Pon.OnuState.Should().Be("O5");
@@ -159,7 +167,7 @@ public sealed class AuthenticatedReadMapTests
         var tags = string.Join("", Enumerable.Range(1, 20).Select(i => $"<p MenuPage='page{i}'>p{i}</p>"));
         var transport = new MapperTransport { HomeHtml = $"<html><body>{tags}</body></html>" };
         var result = await F6201BAuthenticatedReadMapper.MapAsync(transport, EmptySnapshot(), NullLogger.Instance, CancellationToken.None);
-        result.Snapshot.PagesRead.Count.Should().BeLessThanOrEqualTo(F6201BV9310P8N1AuthContract.MaxSafeReadPages);
+        result.Snapshot.PagesRead.Count.Should().BeLessThanOrEqualTo(F6201BV9310P8N1AuthContract.MaxMappedPages);
         transport.Posts.Should().BeEmpty();
         transport.ConfigPostCount.Should().Be(0);
         transport.Gets.Should().NotContain(uri => uri.Contains("unknownGuess"));

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using TantoOntManager.Domain.Audit;
 using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Diagnostics;
@@ -23,7 +24,9 @@ public sealed record F6201BParsedPonStatus(
     string? Voltage,
     string? BiasCurrent,
     IReadOnlyList<FieldEvidence> Evidence,
-    bool Partial);
+    bool Partial,
+    string? Loid = null,
+    string? GponSerial = null);
 
 public sealed record F6201BParsedWanSummary(
     IReadOnlyList<WanProfile> Profiles,
@@ -44,12 +47,12 @@ public static class F6201BV9310P8N1DeviceInformationParser
         }
 
         var evidence = new List<FieldEvidence>();
-        string? Read(params string[] keys)
+        string? ReadExact(params string[] keys)
         {
             foreach (var page in source)
             {
-                var parsed = F6201BLabeledValueReader.Read(page.Page, page.Body, keys);
-                if (parsed.Found)
+                var parsed = F6201BLabeledValueReader.ReadExact(page.Page, page.Body, keys);
+                if (parsed.Found && F6201BFieldAssociation.IsUsableScalar(parsed.Value))
                 {
                     evidence.Add(parsed.Evidence!);
                     return parsed.Value;
@@ -59,12 +62,12 @@ public static class F6201BV9310P8N1DeviceInformationParser
             return null;
         }
 
-        var deviceType = Read("Device Type", "DeviceType", "ModelName", "Model Name", "Frm_ModelName");
-        var hardware = Read("Hardware Version", "HardwareVer", "HwVer", "Frm_HardwareVer", "HWVer");
-        var software = Read("Software Version", "SoftwareVer", "SwVer", "Frm_SoftwareVer", "SWVer");
-        var boot = Read("Boot Version", "BootVer", "Frm_BootVer");
-        var serial = Read("Serial Number", "SerialNum", "SerialNumber", "Frm_SerialNumber", "GPON SN", "GPONSN");
-        var mac = Read("MAC Address", "MacAddr", "MACAddress", "Frm_MACAddress");
+        var deviceType = ReadExact("Device Type", "DeviceType", "ModelName", "Model Name", "Frm_ModelName");
+        var hardware = ReadExact("Hardware Version", "HardwareVersion", "HardwareVer", "HwVer", "Frm_HardwareVer", "HWVer");
+        var software = ReadExact("Software Version", "SoftwareVersion", "Firmware Version", "FirmwareVersion");
+        var boot = ReadExact("Boot Version", "BootVersion", "BootVer", "Frm_BootVer");
+        var serial = ReadExact("Serial Number", "SerialNum", "SerialNumber", "Frm_SerialNumber", "GPON SN", "GPONSN");
+        var mac = ReadExact("MAC Address", "MacAddr", "MACAddress", "Frm_MACAddress");
 
         var found = new[] { deviceType, hardware, software, boot, serial, mac }.Count(value => !string.IsNullOrWhiteSpace(value));
         return new F6201BParsedDeviceInformation(
@@ -83,13 +86,14 @@ public static class F6201BV9310P8N1PonParser
 {
     public static F6201BParsedPonStatus Parse(params (string Page, string Body)[] pages)
     {
+        var source = pages.Where(page => LooksLikePonPage(page.Page, page.Body)).ToArray();
         var evidence = new List<FieldEvidence>();
-        string? Read(params string[] keys)
+        string? ReadExact(params string[] keys)
         {
-            foreach (var page in pages)
+            foreach (var page in source)
             {
-                var parsed = F6201BLabeledValueReader.Read(page.Page, page.Body, keys);
-                if (parsed.Found)
+                var parsed = F6201BLabeledValueReader.ReadExact(page.Page, page.Body, keys);
+                if (parsed.Found && F6201BFieldAssociation.IsUsableScalar(parsed.Value))
                 {
                     evidence.Add(parsed.Evidence!);
                     return parsed.Value;
@@ -99,14 +103,16 @@ public static class F6201BV9310P8N1PonParser
             return null;
         }
 
-        var onu = Read("ONU State", "OnuState", "PonState", "PON Status", "Frm_PonState", "ONUState");
-        var temperature = Read("Temperature", "Frm_Temperature", "OptTemperature", "OpticTemperature");
-        var input = Read("Optical Module Input Power", "RxPower", "Frm_RxPower", "OpticalRx", "InputPower");
-        var output = Read("Optical Module Output Power", "TxPower", "Frm_TxPower", "OpticalTx", "OutputPower");
-        var voltage = Read("Supply Voltage", "Voltage", "Frm_Voltage", "SupplyVoltage");
-        var bias = Read("Transmitter Bias Current", "BiasCurrent", "Bias", "Frm_Bias", "TxBias");
+        var onu = ReadExact("ONU State", "OnuState", "PonState", "PON Status", "Frm_PonState", "ONUState");
+        var temperature = ReadExact("Temperature", "Frm_Temperature", "OptTemperature", "OpticTemperature");
+        var input = ReadExact("Optical Module Input Power", "RxPower", "Frm_RxPower", "OpticalRx", "InputPower", "RX optical power");
+        var output = ReadExact("Optical Module Output Power", "TxPower", "Frm_TxPower", "OpticalTx", "OutputPower", "TX optical power");
+        var voltage = ReadExact("Supply Voltage", "Frm_Voltage", "SupplyVoltage");
+        var bias = ReadExact("Transmitter Bias Current", "BiasCurrent", "Frm_Bias", "TxBias");
+        var loid = ReadExact("LOID", "Loid", "PonLoid", "Frm_LOID");
+        var gponSn = ReadExact("GPON SN", "GPONSN", "PonSN", "SerialNumber", "Frm_PonSN");
 
-        var found = new[] { onu, temperature, input, output, voltage, bias }.Count(value => !string.IsNullOrWhiteSpace(value));
+        var found = new[] { onu, temperature, input, output, voltage, bias, loid, gponSn }.Count(value => !string.IsNullOrWhiteSpace(value));
         return new F6201BParsedPonStatus(
             onu,
             temperature,
@@ -115,7 +121,25 @@ public static class F6201BV9310P8N1PonParser
             voltage,
             bias,
             evidence,
-            found is > 0 and < 6);
+            found is > 0 and < 8,
+            loid,
+            gponSn);
+    }
+
+    private static bool LooksLikePonPage(string page, string body)
+    {
+        if (page.Contains("pon", StringComparison.OrdinalIgnoreCase)
+            || page.Contains("optical", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var compact = F6201BFieldAssociation.Compact(body);
+        return compact.Contains("ONUSTATE")
+               || compact.Contains("FRMPONSTATE")
+               || compact.Contains("OPTICALMODULEINPUTPOWER")
+               || compact.Contains("FRMRXPOWER")
+               || compact.Contains("PONLOID");
     }
 }
 
@@ -126,11 +150,11 @@ public static class F6201BV9310P8N1WanParser
         var evidence = new List<FieldEvidence>();
         var profiles = new List<WanProfile>();
 
-        foreach (var page in pages)
+        foreach (var page in pages.Where(item => LooksLikeWanPage(item.Page, item.Body)))
         {
             foreach (var obj in F6201BLabeledValueReader.ReadJsonObjectArrays(page.Body))
             {
-                var name = First(obj, "WANCName", "ViewName", "Name", "WanName", "ConnectionName");
+                var name = First(obj, "WANCName", "ViewName", "ConnectionName", "WanName");
                 if (string.IsNullOrWhiteSpace(name) || !LooksLikeWanObject(obj))
                 {
                     continue;
@@ -163,19 +187,23 @@ public static class F6201BV9310P8N1WanParser
 
         var ip = First(obj, "IPAddress", "ExternalIPAddress", "Ipv4Address");
         var mac = First(obj, "MACAddress", "MacAddr", "WorkIFMac");
+        var user = First(obj, "Username", "PPPUsername", "PPPoEUser");
         profiles.Add(new WanProfile(
             name,
-            First(obj, "ConnType", "WANCType", "Type", "ConnectionType"),
-            First(obj, "ServList", "ServiceList", "Service"),
+            First(obj, "ConnType", "WANCType", "ConnectionType"),
+            First(obj, "ServList", "ServiceList"),
             First(obj, "LinkType"),
             First(obj, "IPType", "AddressingType", "AddressType"),
             First(obj, "IPVersion", "IPMode", "IpVer"),
-            F6201BLabeledValueReader.ParseBool(First(obj, "NATEnabled", "NAT", "EnableNAT")),
-            F6201BLabeledValueReader.ParseInt(First(obj, "VLANID", "VLAN", "VID", "VLANIDMark")),
-            F6201BLabeledValueReader.ParseInt(First(obj, "Priority", "Priority8021", "8021p", "VlanPriority")),
-            First(obj, "ConnStatus", "Status", "ConnectionStatus"),
+            F6201BLabeledValueReader.ParseBool(First(obj, "NATEnabled", "EnableNAT")),
+            F6201BLabeledValueReader.ParseInt(First(obj, "VLANID", "VLANIDMark", "VID")),
+            F6201BLabeledValueReader.ParseInt(First(obj, "Priority", "Priority8021", "VlanPriority")),
+            First(obj, "ConnStatus", "ConnectionStatus"),
             First(obj, "DisconnectReason", "ConnError"),
-            SensitiveDataMasker.MaskIpv4(ip)));
+            SensitiveDataMasker.MaskIpv4(ip),
+            string.IsNullOrWhiteSpace(mac) ? null : SensitiveDataMasker.MaskMac(mac),
+            string.IsNullOrWhiteSpace(user) ? null : SensitiveDataMasker.MaskUsername(user),
+            F6201BLabeledValueReader.ParseBool(First(obj, "VLANEnabled", "EnableVLAN", "VLANMode"))));
 
         evidence.Add(new FieldEvidence("WanName", name, page, "json-wan", name));
         if (!string.IsNullOrWhiteSpace(mac))
@@ -191,40 +219,96 @@ public static class F6201BV9310P8N1WanParser
         List<FieldEvidence> evidence)
     {
         var decoded = F6201BHtmlText.Decode(html);
-        foreach (var candidate in new[] { "HSI_TR069", "VOIP_IPTV" })
+        var tables = Regex.Split(decoded, "(?i)</table>");
+        foreach (var table in tables)
         {
-            if (!decoded.Contains(candidate, StringComparison.OrdinalIgnoreCase))
+            var rows = Regex.Split(table, "(?i)</tr>")
+                .Select(row => Regex.Matches(row, "(?is)<t[dh][^>]*>(.*?)</t[dh]>")
+                    .Select(match => F6201BHtmlText.Normalize(Regex.Replace(match.Groups[1].Value, "(?is)<[^>]+>", " ")))
+                    .ToList())
+                .Where(cells => cells.Count > 0)
+                .ToList();
+            if (rows.Count < 2)
             {
                 continue;
             }
 
-            if (profiles.Any(item => item.Name.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+            var headers = rows[0];
+            var nameIndex = IndexOfHeader(headers, "Connection Name", "WANCName", "Name", "WanName");
+            if (nameIndex < 0)
             {
                 continue;
             }
 
-            var windowStart = decoded.IndexOf(candidate, StringComparison.OrdinalIgnoreCase);
-            var window = decoded.Substring(Math.Max(0, windowStart - 80), Math.Min(decoded.Length - Math.Max(0, windowStart - 80), 900));
-            var vlan = F6201BLabeledValueReader.Read(page, window, "VLAN", "VLAN ID", "VLANID", "VID");
-            var status = F6201BLabeledValueReader.Read(page, window, "Status", "ConnectionStatus", "ConnStatus");
-            var service = F6201BLabeledValueReader.Read(page, window, "Service List", "ServiceList", "ServList", "Service");
-            var type = F6201BLabeledValueReader.Read(page, window, "Type", "Link Type", "LinkType", "ConnType");
-            profiles.Add(new WanProfile(
-                candidate,
-                type.Value,
-                service.Value,
-                type.Value,
-                null,
-                null,
-                null,
-                F6201BLabeledValueReader.ParseInt(vlan.Value),
-                null,
-                status.Value,
-                null,
-                null));
-            evidence.Add(new FieldEvidence("WanName", candidate, page, "html-table", candidate));
+            for (var i = 1; i < rows.Count; i++)
+            {
+                var cells = rows[i];
+                if (nameIndex >= cells.Count)
+                {
+                    continue;
+                }
+
+                var name = cells[nameIndex];
+                if (!F6201BFieldAssociation.IsUsableScalar(name)
+                    || profiles.Any(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                profiles.Add(new WanProfile(
+                    name,
+                    Cell(headers, cells, "Type", "ConnType", "ConnectionType"),
+                    Cell(headers, cells, "Service List", "ServList", "ServiceList"),
+                    Cell(headers, cells, "Link Type", "LinkType"),
+                    Cell(headers, cells, "IPv4 Type", "IPType"),
+                    Cell(headers, cells, "IP Version", "IPVersion"),
+                    F6201BLabeledValueReader.ParseBool(Cell(headers, cells, "NAT", "NATEnabled")),
+                    F6201BLabeledValueReader.ParseInt(Cell(headers, cells, "VLAN ID", "VLANID", "VID")),
+                    F6201BLabeledValueReader.ParseInt(Cell(headers, cells, "802.1p", "Priority")),
+                    Cell(headers, cells, "IPv4 Status", "ConnStatus", "Status"),
+                    Cell(headers, cells, "Disconnect Reason", "DisconnectReason"),
+                    MaskIf(Cell(headers, cells, "IP Address", "IPAddress"), SensitiveDataMasker.MaskIpv4),
+                    MaskIf(Cell(headers, cells, "MAC Address", "MACAddress"), SensitiveDataMasker.MaskMac),
+                    MaskIf(Cell(headers, cells, "PPPoE Username", "Username"), SensitiveDataMasker.MaskUsername),
+                    F6201BLabeledValueReader.ParseBool(Cell(headers, cells, "VLAN", "VLANEnabled"))));
+                evidence.Add(new FieldEvidence("WanName", name, page, "html-table-row", name));
+            }
         }
     }
+
+    private static int IndexOfHeader(IReadOnlyList<string> headers, params string[] names)
+    {
+        for (var i = 0; i < headers.Count; i++)
+        {
+            if (names.Any(name => F6201BFieldAssociation.NamesEqual(headers[i], name)))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static string? Cell(IReadOnlyList<string> headers, IReadOnlyList<string> cells, params string[] names)
+    {
+        var index = IndexOfHeader(headers, names);
+        if (index < 0 || index >= cells.Count)
+        {
+            return null;
+        }
+
+        var value = cells[index];
+        return F6201BFieldAssociation.IsUsableScalar(value) ? value : null;
+    }
+
+    private static string? MaskIf(string? value, Func<string?, string> mask)
+        => string.IsNullOrWhiteSpace(value) ? null : mask(value);
+
+    private static bool LooksLikeWanPage(string page, string body)
+        => page.Contains("wan", StringComparison.OrdinalIgnoreCase)
+           || page.Contains("ethWan", StringComparison.OrdinalIgnoreCase)
+           || body.Contains("OBJ_WANIP", StringComparison.OrdinalIgnoreCase)
+           || body.Contains("WANCName", StringComparison.OrdinalIgnoreCase);
 
     private static bool LooksLikeWanObject(IReadOnlyDictionary<string, string> obj)
         => obj.Keys.Any(key =>
@@ -270,7 +354,13 @@ public static class F6201BV9310P8N1AuthenticatedPageParser
         F6201BParsedPonStatus pon,
         F6201BParsedWanSummary wan)
         => new(
-            new PonState(pon.OnuState, pon.OnuState is null ? "Estado PON não lido nas páginas GET homologadas." : null),
+            new PonState(
+                pon.OnuState,
+                pon.OnuState is null
+                    ? FirmwareInfo.AuthenticatedMissing
+                    : PonState.FormatOnuState(pon.OnuState, true),
+                pon.Loid,
+                pon.GponSerial),
             new OpticalReading(pon.Temperature, pon.OutputPower, pon.InputPower, pon.Voltage, pon.BiasCurrent),
             wan.Profiles,
             wan.Note,

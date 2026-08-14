@@ -7,7 +7,15 @@ public sealed record FirmwareInfo(
 {
     public static FirmwareInfo Unknown { get; } = new(null, null, null);
 
-    public string SoftwareDisplay => SoftwareVersion ?? "Não disponível na interface pública";
-    public string HardwareDisplay => HardwareVersion ?? "Não disponível na interface pública";
-    public string BootDisplay => BootVersion ?? "Não disponível na interface pública";
+    public const string PublicMissing = "Não disponível na interface pública";
+    public const string AuthenticatedMissing = "Não localizado nas páginas autenticadas homologadas";
+
+    public string SoftwareDisplay => SoftwareVersion ?? PublicMissing;
+    public string HardwareDisplay => HardwareVersion ?? PublicMissing;
+    public string BootDisplay => BootVersion ?? PublicMissing;
+
+    public static string Display(string? value, bool authenticated)
+        => string.IsNullOrWhiteSpace(value)
+            ? (authenticated ? AuthenticatedMissing : PublicMissing)
+            : value;
 }

@@ -223,6 +223,14 @@
                 <TextBlock Text="Transmitter Bias Current" Foreground="{StaticResource MutedBrush}" FontSize="11" />
                 <TextBlock Text="{Binding BiasCurrent}" />
               </StackPanel>
+              <StackPanel Margin="0,0,0,12">
+                <TextBlock Text="LOID" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding Loid}" />
+              </StackPanel>
+              <StackPanel Margin="0,0,16,12">
+                <TextBlock Text="GPON SN (mascarado)" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding GponSerial}" />
+              </StackPanel>
             </UniformGrid>
           </ScrollViewer>
         </TabItem>

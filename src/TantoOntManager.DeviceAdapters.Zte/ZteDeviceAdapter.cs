@@ -139,7 +139,7 @@ public sealed class ZteDeviceAdapter : IOntDeviceAdapter
             WriteOperationsSupportedByAdapter: false,
             Notes:
             [
-                "Fase 0.1.4.2-lab: firmware ausente permanece não confirmada; incompatibilidade exige versão real lida.",
+                "Fase 0.1.5-lab: leitura dirigida Device/PON/WAN somente GET, sem escrita.",
                 "WAN, VLAN, PPPoE e TR-069 não são gravados.",
                 "F6600P e F670L têm estrutura preparada, sem detector específico nesta entrega.",
                 "Gravação desativada por padrão e sem contrato homologado."

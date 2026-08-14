@@ -15,6 +15,11 @@ public static class F6201BV9310P8N1AuthContract
     public const string SessionCookieNamePrefix = "SID_HTTPS_";
     public const string XmlChallengeRoot = "ajax_response_xml_root";
     public const int MaxSafeReadPages = 12;
+    public const int MaxMappedPages = 64;
+    public const int DirectedDeviceGets = 10;
+    public const int DirectedPonGets = 12;
+    public const int DirectedWanGets = 16;
+    public const int SecondaryGets = 20;
     public const int MaxTotalBodyBytes = 1_500_000;
     public const int MaxTagLength = 80;
     public const int MaxJsAssets = 8;
@@ -125,7 +130,8 @@ public static class F6201BV9310P8N1AuthContract
         if (!IsAllowedGetType(type)
             || !IsValidTag(tag)
             || IsDestructiveTag(tag)
-            || IsAuthControlTag(tag))
+            || IsAuthControlTag(tag)
+            || (F6201BTagSafety.HasConfigToken(tag) && !F6201BTagSafety.IsMenuViewConfigTemplate(type!, tag)))
         {
             return false;
         }
