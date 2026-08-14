@@ -13,13 +13,18 @@ public sealed record SafeReadInventoryItem(
 {
     public string TypeAndTag { get; init; } = Tag;
 
+    public string? MenuText { get; init; }
+
+    public int? HttpStatus { get; init; }
+
     public SafeReadInventoryItem WithAccess(string? contentType, int sizeBytes, string sanitizedHash)
         => this with
         {
             ContentType = contentType,
             SizeBytes = sizeBytes,
             SanitizedHash = sanitizedHash,
-            WasAccessed = true
+            WasAccessed = true,
+            HttpStatus = 200
         };
 
     public SafeReadInventoryItem WithClassification(SafeReadClassification classification, string reason, bool accessed)

@@ -158,6 +158,26 @@ public sealed class BoundOntTransportTests
     }
 
     [Fact]
+    public async Task Referenced_js_asset_is_allowed_invented_path_is_not()
+    {
+        var handler = new ScriptedHandler();
+        MapDefaults(handler);
+        handler.Map["https://192.168.100.1/"] = Html("<script src=\"/jquery/common_lib.js\"></script>");
+        handler.Map["https://192.168.100.1/jquery/common_lib.js"] = Html("function load(){}");
+        var transport = Create(handler);
+        await transport.GetAsync("/", CancellationToken.None);
+        var before = await transport.GetAsync("/jquery/common_lib.js", CancellationToken.None);
+        before.Succeeded.Should().BeFalse();
+        transport.RememberReferencedAsset("/jquery/common_lib.js");
+        var allowed = await transport.GetAsync("/jquery/common_lib.js", CancellationToken.None);
+        allowed.Succeeded.Should().BeTrue();
+        var invented = await transport.GetAsync("/js/invented.js", CancellationToken.None);
+        invented.Succeeded.Should().BeFalse();
+        invented.Error!.Code.Should().Be(ErrorCodes.GetNotAllowlisted);
+        transport.ConfigPostCount.Should().Be(0);
+    }
+
+    [Fact]
     public void Session_cannot_target_another_ip()
     {
         var uri = new Uri("https://192.168.1.1/");

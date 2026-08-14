@@ -17,6 +17,7 @@ public static class F6201BV9310P8N1AuthContract
     public const int MaxSafeReadPages = 12;
     public const int MaxTotalBodyBytes = 1_500_000;
     public const int MaxTagLength = 80;
+    public const int MaxJsAssets = 8;
 
     public static readonly IReadOnlyList<string> RequiredPublicMarkers =
     [
@@ -45,13 +46,6 @@ public static class F6201BV9310P8N1AuthContract
         "modeswitch_entry"
     ];
 
-    private static readonly string[] DestructiveFragments =
-    [
-        "apply", "save", "submit", "create", "delete", "remove", "reset", "reboot",
-        "upgrade", "upload", "restore", "factory", "firmware", "password", "account",
-        "write", "set", "modify", "download", "backup", "wizard", "logout", "logoff",
-        "chgpwd", "btn_apply", "btn_delete"
-    ];
 
     public static bool PublicPageMatchesContract(string? html)
     {
@@ -68,15 +62,7 @@ public static class F6201BV9310P8N1AuthContract
            && AuthControlTags.Contains(tag, StringComparer.OrdinalIgnoreCase);
 
     public static bool IsDestructiveTag(string? tag)
-    {
-        if (string.IsNullOrWhiteSpace(tag))
-        {
-            return true;
-        }
-
-        var normalized = tag.ToLowerInvariant();
-        return DestructiveFragments.Any(fragment => normalized.Contains(fragment, StringComparison.Ordinal));
-    }
+        => F6201BTagSafety.IsBlocked(tag);
 
     public static bool IsValidTag(string? tag)
     {
@@ -139,6 +125,26 @@ public static class F6201BV9310P8N1AuthContract
 
         var key = MakeKey(type!, tag!);
         return discoveredKeys.Any(item => item.Equals(key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static bool IsAllowedJsAsset(Uri uri, IPAddress boundAddress, IReadOnlyCollection<string> discoveredAssets)
+    {
+        if (uri.Scheme is not ("http" or "https"))
+        {
+            return false;
+        }
+
+        if (!uri.Host.Equals(boundAddress.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(uri.Query))
+        {
+            return false;
+        }
+
+        return discoveredAssets.Any(item => item.Equals(uri.AbsolutePath, StringComparison.OrdinalIgnoreCase));
     }
 
     public static bool IsLoginPost(Uri uri, IPAddress boundAddress)

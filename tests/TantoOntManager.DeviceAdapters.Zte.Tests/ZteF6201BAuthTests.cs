@@ -10,6 +10,7 @@ using TantoOntManager.DeviceAdapters.Zte.Auth;
 using TantoOntManager.Domain.Adapters;
 using TantoOntManager.Domain.Common;
 using TantoOntManager.Domain.Devices;
+using TantoOntManager.Domain.Discovery;
 using TantoOntManager.Domain.Network;
 using TantoOntManager.Domain.Sessions;
 
@@ -165,6 +166,11 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         F6201BV9310P8N1AuthContract.IsDestructiveTag("accountMgr").Should().BeTrue();
         F6201BV9310P8N1AuthContract.IsDestructiveTag("wan_apply").Should().BeTrue();
         F6201BV9310P8N1AuthContract.IsDestructiveTag("wanModify").Should().BeTrue();
+        F6201BV9310P8N1AuthContract.IsDestructiveTag("setWan").Should().BeTrue();
+        F6201BV9310P8N1AuthContract.IsDestructiveTag("offset").Should().BeFalse();
+        F6201BV9310P8N1AuthContract.IsDestructiveTag("ethWanStatus").Should().BeFalse();
+        F6201BV9310P8N1AuthContract.IsDestructiveTag("assetInfo").Should().BeFalse();
+        F6201BV9310P8N1AuthContract.IsDestructiveTag("dataset").Should().BeFalse();
     }
 
     [Fact]
@@ -231,6 +237,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         public AuthorizedDeviceSession? DomainSession { get; private set; }
         public IBoundOntTransport? Transport { get; private set; }
         public AuthenticatedReadSnapshot? Snapshot { get; private set; }
+        public AuthenticatedReadMap? ReadMap { get; private set; }
         public AuthSessionState State { get; private set; } = AuthSessionState.Unmapped;
 
         public void Remember(IBoundOntTransport transport, AuthorizedDeviceSession session, AuthenticatedReadSnapshot snapshot)
@@ -240,6 +247,10 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
             Snapshot = snapshot;
             State = AuthSessionState.AuthenticatedReadOnly;
         }
+
+        public void RememberReadMap(AuthenticatedReadMap map) => ReadMap = map;
+
+        public void ReplaceSnapshot(AuthenticatedReadSnapshot snapshot) => Snapshot = snapshot;
 
         public void End(string reason)
         {
@@ -354,6 +365,10 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         }
 
         public void RememberSafeRead(string type, string tag)
+        {
+        }
+
+        public void RememberReferencedAsset(string relativePath)
         {
         }
 

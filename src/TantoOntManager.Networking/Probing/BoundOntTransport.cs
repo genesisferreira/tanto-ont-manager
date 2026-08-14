@@ -50,6 +50,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
     private readonly List<string> _gets = [];
     private readonly List<string> _posts = [];
     private readonly HashSet<string> _discoveredTags = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _discoveredAssets = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
     private readonly string _sessionId = Guid.NewGuid().ToString("N")[..8];
     private HttpClient? _client;
@@ -155,6 +156,11 @@ public sealed class BoundOntTransport : IBoundOntTransport
             return BoundHttpResult.Fail(error!);
         }
 
+        if (F6201BV9310P8N1AuthContract.IsAllowedJsAsset(uri, BoundAddress, _discoveredAssets))
+        {
+            return await SendAsync(HttpMethod.Get, uri, null, cancellationToken);
+        }
+
         if (!F6201BV9310P8N1AuthContract.IsAllowedGet(uri, BoundAddress, _discoveredTags))
         {
             _logger.LogWarning("GET recusado fora da allowlist: {Path}", F6201BV9310P8N1AuthContract.MaskUri(uri));
@@ -231,6 +237,22 @@ public sealed class BoundOntTransport : IBoundOntTransport
         }
 
         _discoveredTags.Add(F6201BV9310P8N1AuthContract.MakeKey(type, tag));
+    }
+
+    public void RememberReferencedAsset(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath)
+            || _discoveredAssets.Count >= F6201BV9310P8N1AuthContract.MaxJsAssets)
+        {
+            return;
+        }
+
+        if (!F6201BScriptReference.TryNormalize(relativePath, BoundAddress, _endpoint.BaseUri, out var path))
+        {
+            return;
+        }
+
+        _discoveredAssets.Add(path);
     }
 
     public void RememberDiscoveredTags(string html)
@@ -469,7 +491,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
             {
                 Timeout = TimeSpan.FromSeconds(8)
             };
-            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.3.1 (lab-readonly)");
+            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.4 (lab-readonly)");
             _client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
             _httpClientInstanceId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_client);
             return _client;

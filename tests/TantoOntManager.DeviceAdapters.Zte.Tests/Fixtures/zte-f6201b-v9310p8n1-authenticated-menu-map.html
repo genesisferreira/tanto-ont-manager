@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><title>F6201B</title>
+<script src="/jquery/common_lib.js"></script>
+</head>
+<body>
+<script>
+var menuTreeJSON = [
+  {"id":"mgrAndDiag","name":"Management & Diagnosis","children":[
+    {"id":"devStatus","name":"Status","area":[{"area":"status_t.lp"}]}
+  ]},
+  {"id":"internet","name":"Internet","children":[
+    {"id":"ponInfo","name":"PON Information"},
+    {"id":"wanFolder","name":"Status","children":[
+      {"id":"ethWanStatus","name":"WAN"}
+    ]},
+    {"id":"ethWan","name":"WAN"},
+    {"id":"wanModify","name":"WAN Modify"},
+    {"id":"accountMgr","name":"Account"}
+  ]}
+];
+function openLink(pageurl) {
+  var PageName = "/?_type=menuView&_tag=" + pageurl;
+}
+var hidden = "/?_type=hiddenData&_tag=offset";
+var apply = "/?_type=menuView&_tag=wan_apply";
+</script>
+</body>
+</html>

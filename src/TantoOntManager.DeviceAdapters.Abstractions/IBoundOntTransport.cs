@@ -61,6 +61,8 @@ public interface IBoundOntTransport : IDisposable
 
     void RememberSafeRead(string type, string tag);
 
+    void RememberReferencedAsset(string relativePath);
+
     void ClearCookiesAndState(string reason);
 }
 

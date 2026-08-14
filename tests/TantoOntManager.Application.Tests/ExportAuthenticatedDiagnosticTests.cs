@@ -9,6 +9,7 @@ using TantoOntManager.Domain.Audit;
 using TantoOntManager.Domain.Common;
 using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Diagnostics;
+using TantoOntManager.Domain.Discovery;
 using TantoOntManager.Domain.Network;
 using TantoOntManager.Domain.Sessions;
 using TantoOntManager.Infrastructure.DependencyInjection;
@@ -128,8 +129,11 @@ public sealed class ExportAuthenticatedDiagnosticTests
         public AuthorizedDeviceSession? DomainSession { get; set; }
         public IBoundOntTransport? Transport { get; set; }
         public AuthenticatedReadSnapshot? Snapshot { get; set; }
+        public AuthenticatedReadMap? ReadMap { get; set; }
         public AuthSessionState State { get; set; } = AuthSessionState.Unmapped;
         public void Remember(IBoundOntTransport transport, AuthorizedDeviceSession session, AuthenticatedReadSnapshot snapshot) { }
+        public void RememberReadMap(AuthenticatedReadMap map) => ReadMap = map;
+        public void ReplaceSnapshot(AuthenticatedReadSnapshot snapshot) => Snapshot = snapshot;
         public void End(string reason) { }
         public void SetState(AuthSessionState state) => State = state;
         public bool IsBoundTo(IPAddress address, string? certificateSha256) => false;

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using TantoOntManager.DeviceAdapters.Abstractions;
+using TantoOntManager.Domain.Discovery;
 using TantoOntManager.Domain.Sessions;
 
 namespace TantoOntManager.Infrastructure.Security;
@@ -11,6 +12,7 @@ public sealed class OntAuthSessionStore : IOntAuthSessionStore
     private IBoundOntTransport? _transport;
     private AuthorizedDeviceSession? _session;
     private AuthenticatedReadSnapshot? _snapshot;
+    private AuthenticatedReadMap? _readMap;
     private AuthSessionState _state = AuthSessionState.Unmapped;
 
     public OntAuthSessionStore(ILogger<OntAuthSessionStore> logger)
@@ -51,6 +53,17 @@ public sealed class OntAuthSessionStore : IOntAuthSessionStore
         }
     }
 
+    public AuthenticatedReadMap? ReadMap
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _readMap;
+            }
+        }
+    }
+
     public AuthSessionState State
     {
         get
@@ -84,6 +97,7 @@ public sealed class OntAuthSessionStore : IOntAuthSessionStore
             _transport = transport;
             _session = session;
             _snapshot = snapshot;
+            _readMap = null;
             _state = AuthSessionState.AuthenticatedReadOnly;
         }
 
@@ -92,6 +106,29 @@ public sealed class OntAuthSessionStore : IOntAuthSessionStore
             snapshot.AdapterId,
             snapshot.PostCount,
             snapshot.PagesRead.Count);
+    }
+
+    public void RememberReadMap(AuthenticatedReadMap map)
+    {
+        lock (_gate)
+        {
+            _readMap = map;
+        }
+
+        _logger.LogInformation(
+            "Mapa autenticado candidatos={Total} safe={Safe} bloqueados={Blocked} duplicados={Dup}",
+            map.TotalCandidates,
+            map.SafeReadCount,
+            map.BlockedCount,
+            map.DuplicateCount);
+    }
+
+    public void ReplaceSnapshot(AuthenticatedReadSnapshot snapshot)
+    {
+        lock (_gate)
+        {
+            _snapshot = snapshot;
+        }
     }
 
     public void End(string reason)
@@ -103,6 +140,7 @@ public sealed class OntAuthSessionStore : IOntAuthSessionStore
             _transport = null;
             _session = null;
             _snapshot = null;
+            _readMap = null;
             if (_state is AuthSessionState.AuthenticatedReadOnly or AuthSessionState.Authenticating)
             {
                 _state = AuthSessionState.Unmapped;

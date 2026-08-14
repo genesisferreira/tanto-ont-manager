@@ -69,6 +69,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IEndAuthenticatedSessionUseCase, EndAuthenticatedSessionUseCase>();
         services.AddSingleton<IExportPublicDiagnosticUseCase, ExportPublicDiagnosticUseCase>();
         services.AddSingleton<IExportAuthenticatedDiagnosticUseCase, ExportAuthenticatedDiagnosticUseCase>();
+        services.AddSingleton<IMapAuthenticatedReadsUseCase, MapAuthenticatedReadsUseCase>();
+        services.AddSingleton<IExportAuthenticatedReadMapUseCase, ExportAuthenticatedReadMapUseCase>();
         services.AddSingleton<IBatchProcessingOrchestrator, DisabledBatchProcessingOrchestrator>();
         services.AddSingleton<IBatchWorkOrderReader, UnsupportedBatchWorkOrderReader>();
         services.AddSingleton(paths);

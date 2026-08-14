@@ -29,6 +29,8 @@ public sealed class MainViewModel : ViewModelBase
     private readonly ITestConnectionUseCase _testConnection;
     private readonly IExportPublicDiagnosticUseCase _exportDiagnostic;
     private readonly IExportAuthenticatedDiagnosticUseCase _exportAuthenticated;
+    private readonly IMapAuthenticatedReadsUseCase _mapReads;
+    private readonly IExportAuthenticatedReadMapUseCase _exportReadMap;
     private readonly IAuthenticateDeviceUseCase _authenticate;
     private readonly IEndAuthenticatedSessionUseCase _endSession;
     private readonly IOntAuthSessionStore _authSession;
@@ -77,6 +79,7 @@ public sealed class MainViewModel : ViewModelBase
     private string _configPostCount = "0";
     private string _zipInspection = "Exporte o diagnóstico autenticado durante a sessão para inspecionar o ZIP.";
     private string _inventoryText = "Inventário SafeRead indisponível até o login.";
+    private string _readMapText = "Mapa de leituras autenticadas indisponível até clicar em Mapear leituras.";
     private string _voltage = "—";
     private string _biasCurrent = "—";
     private string _sessionPhase = "Detecção pública";
@@ -87,6 +90,8 @@ public sealed class MainViewModel : ViewModelBase
         ITestConnectionUseCase testConnection,
         IExportPublicDiagnosticUseCase exportDiagnostic,
         IExportAuthenticatedDiagnosticUseCase exportAuthenticated,
+        IMapAuthenticatedReadsUseCase mapReads,
+        IExportAuthenticatedReadMapUseCase exportReadMap,
         IAuthenticateDeviceUseCase authenticate,
         IEndAuthenticatedSessionUseCase endSession,
         IOntAuthSessionStore authSession,
@@ -97,6 +102,8 @@ public sealed class MainViewModel : ViewModelBase
         _testConnection = testConnection;
         _exportDiagnostic = exportDiagnostic;
         _exportAuthenticated = exportAuthenticated;
+        _mapReads = mapReads;
+        _exportReadMap = exportReadMap;
         _authenticate = authenticate;
         _endSession = endSession;
         _authSession = authSession;
@@ -111,6 +118,8 @@ public sealed class MainViewModel : ViewModelBase
         LoginCommand = new RelayCommand(LoginAsync, CanLogin);
         EndSessionCommand = new RelayCommand(EndSessionAsync, () => !IsBusy && IsAuthenticated);
         ExportAuthenticatedCommand = new RelayCommand(ExportAuthenticatedAsync, CanExportAuthenticated);
+        MapReadsCommand = new RelayCommand(MapReadsAsync, () => !IsBusy && IsAuthenticated);
+        ExportReadMapCommand = new RelayCommand(ExportReadMapAsync, CanExportReadMap);
         LoadAdapters();
     }
 
@@ -125,6 +134,8 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand LoginCommand { get; }
     public ICommand EndSessionCommand { get; }
     public ICommand ExportAuthenticatedCommand { get; }
+    public ICommand MapReadsCommand { get; }
+    public ICommand ExportReadMapCommand { get; }
 
     public string ProductName => "Tanto ONT Manager";
     public string ModeLabel => OperationMode.LaboratoryReadOnly.ToUiLabel();
@@ -281,6 +292,7 @@ public sealed class MainViewModel : ViewModelBase
     public string ConfigPostCount { get => _configPostCount; set => SetProperty(ref _configPostCount, value); }
     public string ZipInspection { get => _zipInspection; set => SetProperty(ref _zipInspection, value); }
     public string InventoryText { get => _inventoryText; set => SetProperty(ref _inventoryText, value); }
+    public string ReadMapText { get => _readMapText; set => SetProperty(ref _readMapText, value); }
     public string Voltage { get => _voltage; set => SetProperty(ref _voltage, value); }
     public string BiasCurrent { get => _biasCurrent; set => SetProperty(ref _biasCurrent, value); }
     public string SessionPhase { get => _sessionPhase; set => SetProperty(ref _sessionPhase, value); }
@@ -528,6 +540,57 @@ public sealed class MainViewModel : ViewModelBase
         });
     }
 
+    private async Task MapReadsAsync()
+    {
+        await RunBusyAsync("Mapear leituras", async () =>
+        {
+            var result = await _mapReads.ExecuteAsync(_cts.Token);
+            if (result.IsFailure || result.Value is null)
+            {
+                LastOperation = result.Error?.Message ?? "Falha ao mapear leituras autenticadas.";
+                Recommendations = LastOperation;
+                return;
+            }
+
+            var map = result.Value;
+            LoginPostCount = map.LoginPostCount.ToString();
+            LogoutPostCount = map.LogoutPostCount.ToString();
+            ConfigPostCount = map.ConfigPostCount.ToString();
+            ReadMapText = map.ToOperatorText();
+            SessionPhase = "Mapear leituras autenticadas";
+            LastOperation =
+                $"Mapa: {map.TotalCandidates} candidatos · SafeRead {map.SafeReadCount} · bloqueados {map.BlockedCount} · duplicados {map.DuplicateCount}. POST login={map.LoginPostCount} POST logout={map.LogoutPostCount} POST configuração={map.ConfigPostCount}";
+            Recommendations = map.Note;
+            if (_authSession.Snapshot is { } snapshot)
+            {
+                ApplySnapshot(snapshot);
+            }
+
+            AuthMessage = map.PriorityMissing.Count == 0
+                ? "Mapa autenticado concluído. Somente GET após o login."
+                : "Mapa autenticado concluído. Telas prioritárias sem evidência não foram adivinhadas.";
+        });
+    }
+
+    private async Task ExportReadMapAsync()
+    {
+        await RunBusyAsync("Exportar mapa sanitizado", async () =>
+        {
+            var result = await _exportReadMap.ExecuteAsync(_cts.Token);
+            if (result.IsFailure || result.Value is null)
+            {
+                LastOperation = result.Error?.Message ?? "Falha ao exportar o mapa sanitizado.";
+                Recommendations = LastOperation;
+                return;
+            }
+
+            ExportPath = result.Value.ZipPath;
+            ZipInspection = result.Value.Inspection.ToOperatorText();
+            LastOperation = "Mapa sanitizado salvo em " + result.Value.ZipPath;
+            Recommendations = "Pacote com authenticated-read-map.json e authenticated-read-map.txt, sem HTML, cookies ou tokens.";
+        });
+    }
+
     private async Task EndSessionAsync()
     {
         await RunBusyAsync("Encerrar sessão", async () =>
@@ -543,6 +606,7 @@ public sealed class MainViewModel : ViewModelBase
             LogoutPostCount = (logout?.LogoutPostCount ?? 0).ToString();
             ConfigPostCount = "0";
             LastOperation = AuthMessage + $" POST login={LoginPostCount} POST logout={LogoutPostCount} POST configuração=0";
+            ReadMapText = "Mapa de leituras autenticadas indisponível até clicar em Mapear leituras.";
             RaiseCanExecute();
         });
     }
@@ -646,6 +710,9 @@ public sealed class MainViewModel : ViewModelBase
     private bool CanExportAuthenticated()
         => !IsBusy && IsAuthenticated && _authSession.Snapshot is not null;
 
+    private bool CanExportReadMap()
+        => !IsBusy && IsAuthenticated && _authSession.ReadMap is not null;
+
     private void EndSessionIfBoundToDifferentIp()
     {
         if (_authSession.DomainSession is null)
@@ -675,6 +742,8 @@ public sealed class MainViewModel : ViewModelBase
         (LoginCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (EndSessionCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportAuthenticatedCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (MapReadsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (ExportReadMapCommand as RelayCommand)?.RaiseCanExecuteChanged();
         RaisePropertyChanged(nameof(IsAuthenticationMapped));
         RaisePropertyChanged(nameof(IsAuthenticated));
     }

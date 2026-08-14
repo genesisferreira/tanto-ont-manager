@@ -36,9 +36,9 @@ public static class F6201BSafeReadDiscovery
         var items = new List<SafeReadInventoryItem>();
         var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        void Add(string type, string tag, string source)
+        void Add(string type, string tag, string source, string? menuText = null, bool folder = false)
         {
-            var classified = Classify(type, tag, source, html);
+            var classified = Classify(type, tag, source, html, menuText, folder);
             var key = F6201BV9310P8N1AuthContract.MakeKey(classified.Type, classified.Tag);
             if (!seenKeys.Add(key))
             {
@@ -58,29 +58,43 @@ public static class F6201BSafeReadDiscovery
             items.Add(classified.Item);
         }
 
+        var menuByTag = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in ExtractMenuNodes(html))
+        {
+            if (!string.IsNullOrWhiteSpace(node.Path))
+            {
+                menuByTag[node.Id] = node.Path;
+            }
+
+            Add("menuView", node.Id, $"menuTreeJSON:{node.Kind}@{evidencePage}", node.Path, folder: node.Kind == "folder");
+        }
+
         foreach (Match match in MenuPage.Matches(html))
         {
-            Add("menuView", match.Groups[1].Value, $"MenuPage@{evidencePage}");
+            var tag = match.Groups[1].Value;
+            menuByTag.TryGetValue(tag, out var path);
+            Add("menuView", tag, $"MenuPage@{evidencePage}", path);
         }
 
         foreach (Match match in OpenLink.Matches(html))
         {
-            Add("menuView", match.Groups[1].Value, $"openLink@{evidencePage}");
-        }
-
-        foreach (var node in ExtractMenuTreeIds(html))
-        {
-            Add("menuView", node.Id, $"menuTreeJSON:{node.Kind}@{evidencePage}");
+            var tag = match.Groups[1].Value;
+            menuByTag.TryGetValue(tag, out var path);
+            Add("menuView", tag, $"openLink@{evidencePage}", path);
         }
 
         foreach (Match match in TypedTag.Matches(html))
         {
-            Add(match.Groups[1].Value, match.Groups[2].Value, $"_type+_tag@{evidencePage}");
+            var tag = match.Groups[2].Value;
+            menuByTag.TryGetValue(tag, out var path);
+            Add(match.Groups[1].Value, tag, $"_type+_tag@{evidencePage}", path);
         }
 
         foreach (Match match in TagThenType.Matches(html))
         {
-            Add(match.Groups[2].Value, match.Groups[1].Value, $"_tag+_type@{evidencePage}");
+            var tag = match.Groups[1].Value;
+            menuByTag.TryGetValue(tag, out var path);
+            Add(match.Groups[2].Value, tag, $"_tag+_type@{evidencePage}", path);
         }
 
         return Prioritize(items);
@@ -133,7 +147,8 @@ public static class F6201BSafeReadDiscovery
         }
 
         if (item.EvidenceSource.Contains("menuTreeJSON:page", StringComparison.OrdinalIgnoreCase)
-            || item.Tag.Equals("homePage", StringComparison.OrdinalIgnoreCase))
+            || item.Tag.Equals("homePage", StringComparison.OrdinalIgnoreCase)
+            || F6201BPriorityMenu.Match(item.MenuText) is not null)
         {
             return 0;
         }
@@ -161,7 +176,9 @@ public static class F6201BSafeReadDiscovery
         string type,
         string tag,
         string source,
-        string html)
+        string html,
+        string? menuText,
+        bool folder)
     {
         var normalizedType = string.IsNullOrWhiteSpace(type) ? "menuView" : type;
         var itemBase = new SafeReadInventoryItem(
@@ -175,7 +192,8 @@ public static class F6201BSafeReadDiscovery
             "Tag ainda não classificada.",
             false)
         {
-            TypeAndTag = F6201BV9310P8N1AuthContract.MakeKey(normalizedType, tag)
+            TypeAndTag = F6201BV9310P8N1AuthContract.MakeKey(normalizedType, tag),
+            MenuText = menuText
         };
 
         if (!F6201BV9310P8N1AuthContract.IsValidTag(tag)
@@ -199,21 +217,33 @@ public static class F6201BSafeReadDiscovery
             return (normalizedType, tag, skipped, SafeReadClassification.Invalid);
         }
 
-        if (F6201BV9310P8N1AuthContract.IsDestructiveTag(tag)
-            || LooksLikeActionUrl(html, normalizedType, tag))
+        var safety = F6201BTagSafety.Classify(tag);
+        if (safety.Blocked || LooksLikeActionUrl(html, normalizedType, tag))
         {
             var blocked = itemBase with
             {
                 Classification = SafeReadClassification.BlockedPotentialAction,
-                ClassificationReason = "Tag ou URL associada a ação potencial (apply/save/set/account/firmware/etc.)."
+                ClassificationReason = safety.Blocked
+                    ? safety.Reason
+                    : "URL associada a query extra além de _type/_tag/Menu3Location."
             };
             return (normalizedType, tag, blocked, SafeReadClassification.BlockedPotentialAction);
+        }
+
+        if (folder)
+        {
+            var folderItem = itemBase with
+            {
+                Classification = SafeReadClassification.UnknownNotAccessed,
+                ClassificationReason = "Nó de pasta do menu; GET não iniciado sem evidência de folha."
+            };
+            return (normalizedType, tag, folderItem, SafeReadClassification.UnknownNotAccessed);
         }
 
         var safe = itemBase with
         {
             Classification = SafeReadClassification.SafeRead,
-            ClassificationReason = "Referenciada explicitamente na interface autenticada, sem fragmento de ação."
+            ClassificationReason = "Referenciada explicitamente na interface autenticada, sem token de ação."
         };
         return (normalizedType, tag, safe, SafeReadClassification.SafeRead);
     }
@@ -231,7 +261,7 @@ public static class F6201BSafeReadDiscovery
         return ExtraQuery.IsMatch(window);
     }
 
-    private static IReadOnlyList<(string Id, string Kind, bool HasArea)> ExtractMenuTreeIds(string html)
+    private static IReadOnlyList<(string Id, string Kind, string Path)> ExtractMenuNodes(string html)
     {
         var json = ExtractJsonArray(html, "menuTreeJSON");
         if (json is null)
@@ -242,8 +272,8 @@ public static class F6201BSafeReadDiscovery
         try
         {
             using var document = JsonDocument.Parse(json);
-            var nodes = new List<(string Id, string Kind, bool HasArea)>();
-            Walk(document.RootElement, nodes);
+            var nodes = new List<(string Id, string Kind, string Path)>();
+            Walk(document.RootElement, nodes, parentPath: string.Empty);
             return nodes;
         }
         catch (JsonException)
@@ -252,13 +282,13 @@ public static class F6201BSafeReadDiscovery
         }
     }
 
-    private static void Walk(JsonElement element, List<(string Id, string Kind, bool HasArea)> nodes)
+    private static void Walk(JsonElement element, List<(string Id, string Kind, string Path)> nodes, string parentPath)
     {
         if (element.ValueKind == JsonValueKind.Array)
         {
             foreach (var child in element.EnumerateArray())
             {
-                Walk(child, nodes);
+                Walk(child, nodes, parentPath);
             }
 
             return;
@@ -270,6 +300,7 @@ public static class F6201BSafeReadDiscovery
         }
 
         string? id = null;
+        string? name = null;
         var hasArea = false;
         var hasChildren = false;
         JsonElement children = default;
@@ -278,6 +309,10 @@ public static class F6201BSafeReadDiscovery
             if (property.NameEquals("id") && property.Value.ValueKind == JsonValueKind.String)
             {
                 id = property.Value.GetString();
+            }
+            else if (property.NameEquals("name") && property.Value.ValueKind == JsonValueKind.String)
+            {
+                name = property.Value.GetString();
             }
             else if (property.NameEquals("area"))
             {
@@ -290,15 +325,20 @@ public static class F6201BSafeReadDiscovery
             }
         }
 
+        var label = !string.IsNullOrWhiteSpace(name) ? name : id;
+        var path = string.IsNullOrWhiteSpace(parentPath)
+            ? label ?? string.Empty
+            : parentPath + " → " + label;
+
         if (!string.IsNullOrWhiteSpace(id))
         {
             var kind = hasArea || !hasChildren ? "page" : "folder";
-            nodes.Add((id, kind, hasArea));
+            nodes.Add((id, kind, path));
         }
 
         if (hasChildren)
         {
-            Walk(children, nodes);
+            Walk(children, nodes, path);
         }
     }
 

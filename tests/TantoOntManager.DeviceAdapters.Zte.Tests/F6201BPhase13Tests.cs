@@ -209,6 +209,10 @@ public sealed class F6201BLogoutTests
         {
         }
 
+        public void RememberReferencedAsset(string relativePath)
+        {
+        }
+
         public void ClearCookiesAndState(string reason)
         {
             LastCleanupReason = reason;
@@ -286,6 +290,10 @@ public sealed class F6201BAuthenticatedSafeReaderTests
             => throw new InvalidOperationException();
 
         public void RememberSafeRead(string type, string tag)
+        {
+        }
+
+        public void RememberReferencedAsset(string relativePath)
         {
         }
 
