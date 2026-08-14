@@ -69,7 +69,10 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         transport.Posts.Should().HaveCount(1);
         transport.Posts[0].Should().Contain("_tag=login_entry");
         transport.Gets.Should().Contain("/");
-        transport.Gets.Should().Contain(uri => uri.Contains("devinfo"));
+        transport.Gets.Should().Contain(uri => uri.Contains("devmgr_statusmgr_lua.lua"));
+        transport.Gets.Should().Contain(uri => uri.Contains("optical_info_lua.lua"));
+        transport.Gets.Should().Contain(uri => uri.Contains("wan_internetstatus_lua.lua"));
+        transport.Gets.Should().Contain(uri => uri.Contains("wan_internet_lua.lua"));
         transport.Gets.Should().NotContain(uri => uri.Contains("reboot"));
         store.Snapshot.Should().NotBeNull();
         store.Snapshot!.Identity.Firmware.SoftwareVersion.Should().Be("V9.3.10P8N1");
@@ -431,11 +434,16 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
             {
                 body = ChallengeXml;
             }
-            else if (pathAndQuery.Contains("wan"))
+            else if (pathAndQuery.Contains("wan_internet", StringComparison.OrdinalIgnoreCase)
+                     || pathAndQuery.Contains("_tag=wan", StringComparison.OrdinalIgnoreCase))
             {
                 body = WanHtml ?? DeviceHtml;
             }
-            else if (pathAndQuery.Contains("devinfo") || pathAndQuery.Contains("homePage") || pathAndQuery.Contains("pon"))
+            else if (pathAndQuery.Contains("devmgr_statusmgr", StringComparison.OrdinalIgnoreCase)
+                     || pathAndQuery.Contains("optical_info", StringComparison.OrdinalIgnoreCase)
+                     || pathAndQuery.Contains("devinfo", StringComparison.OrdinalIgnoreCase)
+                     || pathAndQuery.Contains("homePage", StringComparison.OrdinalIgnoreCase)
+                     || pathAndQuery.Contains("pon", StringComparison.OrdinalIgnoreCase))
             {
                 body = DeviceHtml;
             }

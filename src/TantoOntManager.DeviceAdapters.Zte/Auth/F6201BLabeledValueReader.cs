@@ -28,8 +28,12 @@ public static class F6201BLabeledValueReader
 
     private static readonly HashSet<string> SecretKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "password", "ppppassword", "wanpassword", "username", "pppoeuser", "pppoeusername",
-        "keypassphrase", "wpakey", "wlanpassword", "ssid", "ssidname"
+        "password", "ppppassword", "wanpassword", "keypassphrase", "wpakey", "wlanpassword"
+    };
+
+    private static readonly HashSet<string> PasswordKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "password", "ppppassword", "wanpassword", "keypassphrase", "wpakey", "wlanpassword", "ppppwd"
     };
 
     public static ParsedField Read(string pageName, string html, params string[] labelsAndKeys)
@@ -56,7 +60,8 @@ public static class F6201BLabeledValueReader
         }
 
         var decoded = F6201BHtmlText.Decode(html);
-        return ReadJsonExact(pageName, decoded, labelsAndKeys)
+        return ReadXmlParaExact(pageName, decoded, labelsAndKeys)
+               ?? ReadJsonExact(pageName, decoded, labelsAndKeys)
                ?? ReadTransferMeaningExact(pageName, decoded, labelsAndKeys)
                ?? ReadTablePairsExact(pageName, decoded, labelsAndKeys)
                ?? ReadNamedNodesExact(pageName, decoded, labelsAndKeys)
@@ -99,6 +104,65 @@ public static class F6201BLabeledValueReader
 
     public static bool IsSecretKey(string key)
         => SecretKeys.Any(secret => key.Contains(secret, StringComparison.OrdinalIgnoreCase));
+
+    public static bool IsPasswordKey(string key)
+        => PasswordKeys.Any(secret => key.Contains(secret, StringComparison.OrdinalIgnoreCase));
+
+    public static IReadOnlyList<IReadOnlyDictionary<string, string>> ReadXmlInstances(string xml)
+    {
+        var result = new List<IReadOnlyDictionary<string, string>>();
+        if (string.IsNullOrWhiteSpace(xml) || xml.IndexOf("ParaName", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            return result;
+        }
+
+        var decoded = F6201BHtmlText.Decode(xml);
+        foreach (Match instance in Regex.Matches(decoded, "(?is)<Instance>(.*?)</Instance>"))
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match pair in Regex.Matches(
+                         instance.Groups[1].Value,
+                         "(?is)<ParaName>\\s*([^<]+?)\\s*</ParaName>\\s*<ParaValue>\\s*([^<]*?)\\s*</ParaValue>"))
+            {
+                var name = F6201BHtmlText.Normalize(pair.Groups[1].Value);
+                var value = F6201BHtmlText.Normalize(pair.Groups[2].Value);
+                if (string.IsNullOrWhiteSpace(name) || IsPasswordKey(name))
+                {
+                    continue;
+                }
+
+                map[name] = value;
+            }
+
+            if (map.Count > 0)
+            {
+                result.Add(map);
+            }
+        }
+
+        return result;
+    }
+
+    private static ParsedField? ReadXmlParaExact(string pageName, string xml, string[] labelsAndKeys)
+    {
+        foreach (var obj in ReadXmlInstances(xml))
+        {
+            foreach (var key in labelsAndKeys)
+            {
+                foreach (var pair in obj)
+                {
+                    if (F6201BFieldAssociation.NamesEqual(pair.Key, key)
+                        && !IsPasswordKey(pair.Key)
+                        && F6201BFieldAssociation.IsUsableScalar(pair.Value))
+                    {
+                        return F6201BFieldAssociation.Evidence(key, pair.Value, pageName, "xml-paraname", pair.Key, null);
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
 
     private static ParsedField? ReadJson(string pageName, string html, string[] labelsAndKeys)
     {
@@ -432,13 +496,15 @@ public static class F6201BLabeledValueReader
         }
 
         if (value.Equals("1", StringComparison.Ordinal) || value.Equals("true", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("enable", StringComparison.OrdinalIgnoreCase) || value.Equals("enabled", StringComparison.OrdinalIgnoreCase))
+            || value.Equals("enable", StringComparison.OrdinalIgnoreCase) || value.Equals("enabled", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("on", StringComparison.OrdinalIgnoreCase) || value.Equals("yes", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         if (value.Equals("0", StringComparison.Ordinal) || value.Equals("false", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("disable", StringComparison.OrdinalIgnoreCase) || value.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+            || value.Equals("disable", StringComparison.OrdinalIgnoreCase) || value.Equals("disabled", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("off", StringComparison.OrdinalIgnoreCase) || value.Equals("no", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

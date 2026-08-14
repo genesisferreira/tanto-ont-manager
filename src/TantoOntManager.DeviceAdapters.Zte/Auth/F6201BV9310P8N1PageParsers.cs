@@ -152,9 +152,10 @@ public static class F6201BV9310P8N1WanParser
 
         foreach (var page in pages.Where(item => LooksLikeWanPage(item.Page, item.Body)))
         {
-            foreach (var obj in F6201BLabeledValueReader.ReadJsonObjectArrays(page.Body))
+            foreach (var obj in F6201BLabeledValueReader.ReadXmlInstances(page.Body)
+                         .Concat(F6201BLabeledValueReader.ReadJsonObjectArrays(page.Body)))
             {
-                var name = First(obj, "WANCName", "ViewName", "ConnectionName", "WanName");
+                var name = First(obj, "WANCName", "ViewName", "ConnectionName", "WanName", "Name");
                 if (string.IsNullOrWhiteSpace(name) || !LooksLikeWanObject(obj))
                 {
                     continue;
@@ -180,37 +181,71 @@ public static class F6201BV9310P8N1WanParser
         string name,
         IReadOnlyDictionary<string, string> obj)
     {
-        if (profiles.Any(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-
         var ip = First(obj, "IPAddress", "ExternalIPAddress", "Ipv4Address");
         var mac = First(obj, "MACAddress", "MacAddr", "WorkIFMac");
         var user = First(obj, "Username", "PPPUsername", "PPPoEUser");
-        profiles.Add(new WanProfile(
+        var dns = First(obj, "DNS1", "DNSAddress", "Dns");
+        var gateway = First(obj, "GateWay", "Gateway", "DefaultGateway");
+        var created = new WanProfile(
             name,
-            First(obj, "ConnType", "WANCType", "ConnectionType"),
+            First(obj, "ConnType", "WANCType", "ConnectionType", "Type"),
             First(obj, "ServList", "ServiceList"),
             First(obj, "LinkType"),
-            First(obj, "IPType", "AddressingType", "AddressType"),
+            First(obj, "IPType", "AddressingType", "AddressType", "IPv4 Type"),
             First(obj, "IPVersion", "IPMode", "IpVer"),
-            F6201BLabeledValueReader.ParseBool(First(obj, "NATEnabled", "EnableNAT")),
-            F6201BLabeledValueReader.ParseInt(First(obj, "VLANID", "VLANIDMark", "VID")),
-            F6201BLabeledValueReader.ParseInt(First(obj, "Priority", "Priority8021", "VlanPriority")),
-            First(obj, "ConnStatus", "ConnectionStatus"),
+            F6201BLabeledValueReader.ParseBool(First(obj, "NATEnabled", "EnableNAT", "NAT")),
+            F6201BLabeledValueReader.ParseInt(First(obj, "VLANID", "VLANIDMark", "VID", "VLAN ID")),
+            F6201BLabeledValueReader.ParseInt(First(obj, "Priority", "Priority8021", "VlanPriority", "802.1p")),
+            First(obj, "ConnStatus", "ConnectionStatus", "Status"),
             First(obj, "DisconnectReason", "ConnError"),
-            SensitiveDataMasker.MaskIpv4(ip),
+            string.IsNullOrWhiteSpace(ip) ? null : SensitiveDataMasker.MaskIpv4(ip),
             string.IsNullOrWhiteSpace(mac) ? null : SensitiveDataMasker.MaskMac(mac),
             string.IsNullOrWhiteSpace(user) ? null : SensitiveDataMasker.MaskUsername(user),
-            F6201BLabeledValueReader.ParseBool(First(obj, "VLANEnabled", "EnableVLAN", "VLANMode"))));
+            F6201BLabeledValueReader.ParseBool(First(obj, "VLANEnabled", "EnableVLAN", "VLANMode", "VLAN")),
+            First(obj, "MTU"),
+            string.IsNullOrWhiteSpace(dns) ? null : SensitiveDataMasker.MaskIpv4(dns),
+            string.IsNullOrWhiteSpace(gateway) ? null : SensitiveDataMasker.MaskIpv4(gateway),
+            First(obj, "ConnDuration", "Duration", "UpTime"));
 
-        evidence.Add(new FieldEvidence("WanName", name, page, "json-wan", name));
+        var existing = profiles.FindIndex(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (existing >= 0)
+        {
+            profiles[existing] = Merge(profiles[existing], created);
+        }
+        else
+        {
+            profiles.Add(created);
+        }
+
+        evidence.Add(new FieldEvidence("WanName", name, page, "xml-wan", name));
         if (!string.IsNullOrWhiteSpace(mac))
         {
-            evidence.Add(new FieldEvidence("WanMac", SensitiveDataMasker.MaskMac(mac), page, "json-wan", "MAC mascarado"));
+            evidence.Add(new FieldEvidence("WanMac", SensitiveDataMasker.MaskMac(mac), page, "xml-wan", "MAC mascarado"));
         }
     }
+
+    private static WanProfile Merge(WanProfile left, WanProfile right)
+        => left with
+        {
+            Mode = left.Mode ?? right.Mode,
+            ServiceList = left.ServiceList ?? right.ServiceList,
+            LinkType = left.LinkType ?? right.LinkType,
+            IpType = left.IpType ?? right.IpType,
+            AddressFamily = left.AddressFamily ?? right.AddressFamily,
+            NatEnabled = left.NatEnabled ?? right.NatEnabled,
+            VlanId = left.VlanId ?? right.VlanId,
+            Priority8021p = left.Priority8021p ?? right.Priority8021p,
+            ConnectionState = left.ConnectionState ?? right.ConnectionState,
+            DisconnectReason = left.DisconnectReason ?? right.DisconnectReason,
+            Ipv4Address = left.Ipv4Address ?? right.Ipv4Address,
+            MacAddress = left.MacAddress ?? right.MacAddress,
+            PppoeUsername = left.PppoeUsername ?? right.PppoeUsername,
+            VlanEnabled = left.VlanEnabled ?? right.VlanEnabled,
+            Mtu = left.Mtu ?? right.Mtu,
+            Dns = left.Dns ?? right.Dns,
+            Gateway = left.Gateway ?? right.Gateway,
+            Duration = left.Duration ?? right.Duration
+        };
 
     private static void AddFromHtmlTable(
         string page,
@@ -308,6 +343,7 @@ public static class F6201BV9310P8N1WanParser
         => page.Contains("wan", StringComparison.OrdinalIgnoreCase)
            || page.Contains("ethWan", StringComparison.OrdinalIgnoreCase)
            || body.Contains("OBJ_WANIP", StringComparison.OrdinalIgnoreCase)
+           || body.Contains("ID_WAN_COMFIG", StringComparison.OrdinalIgnoreCase)
            || body.Contains("WANCName", StringComparison.OrdinalIgnoreCase);
 
     private static bool LooksLikeWanObject(IReadOnlyDictionary<string, string> obj)
@@ -325,7 +361,7 @@ public static class F6201BV9310P8N1WanParser
             foreach (var pair in obj)
             {
                 if (pair.Key.Equals(key, StringComparison.OrdinalIgnoreCase)
-                    && !F6201BLabeledValueReader.IsSecretKey(pair.Key)
+                    && !F6201BLabeledValueReader.IsPasswordKey(pair.Key)
                     && !string.IsNullOrWhiteSpace(pair.Value))
                 {
                     return pair.Value.Trim();

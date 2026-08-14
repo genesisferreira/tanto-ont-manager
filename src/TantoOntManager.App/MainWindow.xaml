@@ -213,6 +213,14 @@
                 <TextBlock Text="{Binding Temperature}" />
               </StackPanel>
               <StackPanel Margin="0,0,16,12">
+                <TextBlock Text="Input Power" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding InputPower}" />
+              </StackPanel>
+              <StackPanel Margin="0,0,0,12">
+                <TextBlock Text="Output Power" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                <TextBlock Text="{Binding OutputPower}" />
+              </StackPanel>
+              <StackPanel Margin="0,0,16,12">
                 <TextBlock Text="Potência óptica" Foreground="{StaticResource MutedBrush}" FontSize="11" />
                 <TextBlock Text="{Binding OpticalPower}" />
               </StackPanel>
@@ -258,6 +266,8 @@
               <TextBlock Text="{Binding ExportPath}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8" />
               <TextBlock Text="Inspeção do ZIP autenticado" Foreground="{StaticResource MutedBrush}" FontSize="11" />
               <TextBlock Text="{Binding ZipInspection}" TextWrapping="Wrap" Margin="0,0,0,12" FontFamily="Consolas" />
+              <TextBlock Text="GET homologados (sanitizado)" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+              <TextBlock Text="{Binding DiagnosticGetsText}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Margin="0,0,0,12" />
               <TextBlock Text="Inventário SafeRead" Foreground="{StaticResource MutedBrush}" FontSize="11" />
               <TextBlock Text="{Binding InventoryText}" TextWrapping="Wrap" FontSize="12" />
             </StackPanel>

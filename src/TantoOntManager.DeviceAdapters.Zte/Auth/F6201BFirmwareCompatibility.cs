@@ -94,7 +94,8 @@ public static class F6201BFirmwareCompatibility
 
         return page.Contains("devStatus", StringComparison.OrdinalIgnoreCase)
                || page.Contains("devinfo", StringComparison.OrdinalIgnoreCase)
-               || page.Contains("statusMgr", StringComparison.OrdinalIgnoreCase);
+               || page.Contains("statusMgr", StringComparison.OrdinalIgnoreCase)
+               || page.Contains("devmgr_statusmgr", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool LooksLikeDeviceInformationPage(string page, string? body)

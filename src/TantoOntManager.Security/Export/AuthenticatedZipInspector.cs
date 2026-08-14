@@ -32,13 +32,18 @@ public static class AuthenticatedZipInspector
         }
 
         var text = combined.ToString();
+        var tokens = Regex.IsMatch(text, "(?i)(_sessionTOKEN|SID_HTTPS_|Authorization\\s*[:=])");
         var masked = !ContainsFullIdentifier(text, serial, mac) && names.All(name => AllowedEntries.Contains(name));
+        var rawBody = RawHtml.IsMatch(text) || names.Any(name => name.EndsWith(".html", StringComparison.OrdinalIgnoreCase));
         return new AuthenticatedZipInspection(
             Cookie.IsMatch(text),
             ContainsCredentialValue(text),
-            RawHtml.IsMatch(text) || names.Any(name => name.EndsWith(".html", StringComparison.OrdinalIgnoreCase)),
+            rawBody,
             masked,
-            names);
+            names,
+            tokens,
+            rawBody,
+            0);
     }
 
     private static bool ContainsCredentialValue(string text)

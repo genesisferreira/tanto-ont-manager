@@ -1,0 +1,19 @@
+<ajax_response_xml_root>
+  <IF_ERRORSTR>SUCC</IF_ERRORSTR>
+  <OBJ_DEVINFO_ID>
+    <Instance>
+      <ParaName>Device Type</ParaName>
+      <ParaValue>F6201B</ParaValue>
+      <ParaName>Hardware Version</ParaName>
+      <ParaValue>V9.3.12</ParaValue>
+      <ParaName>Software Version</ParaName>
+      <ParaValue>V9.3.10P8N1</ParaValue>
+      <ParaName>Boot Version</ParaName>
+      <ParaValue>V9.3.10P10N6</ParaValue>
+      <ParaName>Serial Number</ParaName>
+      <ParaValue>ZTEG00LAB001</ParaValue>
+      <ParaName>MAC Address</ParaName>
+      <ParaValue>00:11:22:33:44:55</ParaValue>
+    </Instance>
+  </OBJ_DEVINFO_ID>
+</ajax_response_xml_root>

@@ -14,8 +14,13 @@ public static class FirmwareCompatibilityDisplay
 
     public const string AuthenticatedCompatible = "Autenticado — somente leitura";
 
+    public const string AuthenticatedIncompatible = "Incompatibilidade confirmada — escrita proibida";
+
     public static string ToAuthenticatedUiLabel(this FirmwareCompatibility compatibility)
-        => compatibility == FirmwareCompatibility.Unconfirmed
-            ? AuthenticatedUnconfirmed
-            : AuthenticatedCompatible;
+        => compatibility switch
+        {
+            FirmwareCompatibility.Unconfirmed => AuthenticatedUnconfirmed,
+            FirmwareCompatibility.ConfirmedIncompatible => AuthenticatedIncompatible,
+            _ => AuthenticatedCompatible
+        };
 }

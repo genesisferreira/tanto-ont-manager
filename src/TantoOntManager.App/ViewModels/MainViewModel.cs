@@ -14,6 +14,7 @@ using TantoOntManager.Domain.Audit;
 using TantoOntManager.Domain.Common;
 using TantoOntManager.Domain.Detection;
 using TantoOntManager.Domain.Devices;
+using TantoOntManager.Domain.Discovery;
 using TantoOntManager.Domain.Network;
 using TantoOntManager.Domain.Sessions;
 using TantoOntManager.Domain.Observation;
@@ -69,6 +70,8 @@ public sealed class MainViewModel : ViewModelBase
     private string _pon = "—";
     private string _temperature = "—";
     private string _opticalPower = "—";
+    private string _inputPower = "—";
+    private string _outputPower = "—";
     private string _wanProfiles = "—";
     private string _capabilities = "—";
     private string _recommendations = "Modo laboratório — somente leitura. Nenhuma alteração será enviada à ONT ou à placa de rede.";
@@ -87,6 +90,7 @@ public sealed class MainViewModel : ViewModelBase
     private string _configPostCount = "0";
     private string _zipInspection = "Exporte o diagnóstico autenticado durante a sessão para inspecionar o ZIP.";
     private string _inventoryText = "Inventário SafeRead indisponível até o login.";
+    private string _diagnosticGetsText = "Leitura automática indisponível até o login homologado.";
     private string _readMapText = "Mapa de leituras autenticadas indisponível até clicar em Mapear leituras.";
     private string _voltage = "—";
     private string _biasCurrent = "—";
@@ -302,6 +306,8 @@ public sealed class MainViewModel : ViewModelBase
     public string Pon { get => _pon; set => SetProperty(ref _pon, value); }
     public string Temperature { get => _temperature; set => SetProperty(ref _temperature, value); }
     public string OpticalPower { get => _opticalPower; set => SetProperty(ref _opticalPower, value); }
+    public string InputPower { get => _inputPower; set => SetProperty(ref _inputPower, value); }
+    public string OutputPower { get => _outputPower; set => SetProperty(ref _outputPower, value); }
     public string WanProfiles { get => _wanProfiles; set => SetProperty(ref _wanProfiles, value); }
     public string Capabilities { get => _capabilities; set => SetProperty(ref _capabilities, value); }
     public string Recommendations { get => _recommendations; set => SetProperty(ref _recommendations, value); }
@@ -320,6 +326,7 @@ public sealed class MainViewModel : ViewModelBase
     public string ConfigPostCount { get => _configPostCount; set => SetProperty(ref _configPostCount, value); }
     public string ZipInspection { get => _zipInspection; set => SetProperty(ref _zipInspection, value); }
     public string InventoryText { get => _inventoryText; set => SetProperty(ref _inventoryText, value); }
+    public string DiagnosticGetsText { get => _diagnosticGetsText; set => SetProperty(ref _diagnosticGetsText, value); }
     public string ReadMapText { get => _readMapText; set => SetProperty(ref _readMapText, value); }
     public string Voltage { get => _voltage; set => SetProperty(ref _voltage, value); }
     public string BiasCurrent { get => _biasCurrent; set => SetProperty(ref _biasCurrent, value); }
@@ -689,27 +696,25 @@ public sealed class MainViewModel : ViewModelBase
     private void ApplySnapshot(AuthenticatedReadSnapshot snapshot)
     {
         Manufacturer = snapshot.Identity.Manufacturer;
-        Model = snapshot.Identity.Model ?? Model;
-        Hardware = FirmwareInfo.Display(snapshot.Identity.Firmware.HardwareVersion, true);
-        Firmware = FirmwareInfo.Display(snapshot.Identity.Firmware.SoftwareVersion, true);
-        Boot = FirmwareInfo.Display(snapshot.Identity.Firmware.BootVersion, true);
-        Serial = snapshot.Identity.SerialNumber is null
-            ? FirmwareInfo.AuthenticatedMissing
-            : SensitiveDataMasker.MaskSerial(snapshot.Identity.SerialNumber);
-        Mac = snapshot.Identity.MacAddress is null
-            ? FirmwareInfo.AuthenticatedMissing
-            : SensitiveDataMasker.MaskMac(snapshot.Identity.MacAddress);
-        Pon = PonState.FormatOnuState(snapshot.Diagnostics.Pon.OnuState, true);
-        Temperature = FirmwareInfo.Display(snapshot.Diagnostics.Optical.Temperature, true);
-        Voltage = FirmwareInfo.Display(snapshot.Diagnostics.Optical.Voltage, true);
-        BiasCurrent = FirmwareInfo.Display(snapshot.Diagnostics.Optical.BiasCurrent, true);
-        Loid = FirmwareInfo.Display(snapshot.Diagnostics.Pon.Loid, true);
+        Model = DisplayField(snapshot, "Device Type", snapshot.Identity.Model);
+        Hardware = DisplayField(snapshot, "Hardware Version", snapshot.Identity.Firmware.HardwareVersion);
+        Firmware = DisplayField(snapshot, "Software Version", snapshot.Identity.Firmware.SoftwareVersion);
+        Boot = DisplayField(snapshot, "Boot Version", snapshot.Identity.Firmware.BootVersion);
+        Serial = DisplayField(snapshot, "Serial Number", snapshot.Identity.SerialNumber is null ? null : SensitiveDataMasker.MaskSerial(snapshot.Identity.SerialNumber));
+        Mac = DisplayField(snapshot, "MAC Address", snapshot.Identity.MacAddress is null ? null : SensitiveDataMasker.MaskMac(snapshot.Identity.MacAddress));
+        Pon = DisplayField(snapshot, "ONU State", snapshot.Diagnostics.Pon.OnuState);
+        Temperature = DisplayField(snapshot, "Temperature", snapshot.Diagnostics.Optical.Temperature);
+        Voltage = DisplayField(snapshot, "Supply Voltage", snapshot.Diagnostics.Optical.Voltage);
+        BiasCurrent = DisplayField(snapshot, "Transmitter Bias Current", snapshot.Diagnostics.Optical.BiasCurrent);
+        InputPower = DisplayField(snapshot, "Input Power", snapshot.Diagnostics.Optical.RxPower);
+        OutputPower = DisplayField(snapshot, "Output Power", snapshot.Diagnostics.Optical.TxPower);
+        Loid = DisplayField(snapshot, "LOID", snapshot.Diagnostics.Pon.Loid is null ? null : SensitiveDataMasker.MaskUsername(snapshot.Diagnostics.Pon.Loid));
         GponSerial = snapshot.Diagnostics.Pon.GponSerial is null
             ? FirmwareInfo.AuthenticatedMissing
             : SensitiveDataMasker.MaskSerial(snapshot.Diagnostics.Pon.GponSerial);
-        OpticalPower = FormatOptical(snapshot.Diagnostics.Optical, true);
+        OpticalPower = $"Tx {OutputPower} / Rx {InputPower}";
         WanProfiles = snapshot.Diagnostics.WanProfiles.Count == 0
-            ? FirmwareInfo.AuthenticatedMissing
+            ? DisplayField(snapshot, "WAN profiles", null)
             : string.Join(Environment.NewLine + Environment.NewLine, snapshot.Diagnostics.WanProfiles.Select(FormatWan));
         LoginPostCount = snapshot.LoginPostCount.ToString();
         LogoutPostCount = snapshot.LogoutPostCount.ToString();
@@ -718,6 +723,7 @@ public sealed class MainViewModel : ViewModelBase
             ? "Nenhuma tag inventariada."
             : string.Join(Environment.NewLine, snapshot.Inventory.Select(item =>
                 $"{item.Tag} · {item.Classification} · {(item.WasAccessed ? "acessada" : "não acessada")} · {item.ClassificationReason}"));
+        DiagnosticGetsText = snapshot.DiagnosticOperatorText();
         Recommendations = snapshot.FirmwareCompatibility.ToAuthenticatedUiLabel() + ". "
                           + $"POST login: {snapshot.LoginPostCount}. "
                           + "POST configuração: 0. "
@@ -732,6 +738,21 @@ public sealed class MainViewModel : ViewModelBase
         {
             StatusLabel = FirmwareCompatibilityDisplay.AuthenticatedCompatible;
         }
+        else if (snapshot.FirmwareCompatibility == FirmwareCompatibility.ConfirmedIncompatible)
+        {
+            StatusLabel = FirmwareCompatibilityDisplay.AuthenticatedIncompatible;
+        }
+    }
+
+    private static string DisplayField(AuthenticatedReadSnapshot snapshot, string field, string? fallback)
+    {
+        var match = snapshot.FieldReads.FirstOrDefault(item => item.Field.Equals(field, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
+        {
+            return match.ToUiValue();
+        }
+
+        return FirmwareInfo.Display(fallback, true);
     }
 
     private static string FormatWan(WanProfile profile)
@@ -740,16 +761,20 @@ public sealed class MainViewModel : ViewModelBase
             "Connection Name: " + profile.Name,
             profile.Mode is null ? null : "Type: " + profile.Mode,
             profile.ServiceList is null ? null : "Service List: " + profile.ServiceList,
+            profile.Mtu is null ? null : "MTU: " + profile.Mtu,
             profile.LinkType is null ? null : "Link Type: " + profile.LinkType,
             profile.AddressFamily is null ? null : "IP Version: " + profile.AddressFamily,
             profile.IpType is null ? null : "IPv4 Type: " + profile.IpType,
-            profile.NatEnabled is null ? null : "NAT: " + (profile.NatEnabled.Value ? "enabled" : "disabled"),
-            profile.VlanEnabled is null ? null : "VLAN enabled: " + (profile.VlanEnabled.Value ? "yes" : "no"),
+            profile.NatEnabled is null ? null : "NAT: " + (profile.NatEnabled.Value ? "On" : "Off"),
+            profile.VlanEnabled is null ? null : "VLAN: " + (profile.VlanEnabled.Value ? "On" : "Off"),
             profile.VlanId is null ? null : "VLAN ID: " + profile.VlanId,
             profile.Priority8021p is null ? null : "802.1p: " + profile.Priority8021p,
             profile.ConnectionState is null ? null : "IPv4 status: " + profile.ConnectionState,
             profile.DisconnectReason is null ? null : "Disconnect: " + profile.DisconnectReason,
             profile.Ipv4Address is null ? null : "IP: " + profile.Ipv4Address,
+            profile.Dns is null ? null : "DNS: " + profile.Dns,
+            profile.Gateway is null ? null : "Gateway: " + profile.Gateway,
+            profile.Duration is null ? null : "Duration: " + profile.Duration,
             profile.MacAddress is null ? null : "MAC: " + profile.MacAddress,
             profile.PppoeUsername is null ? null : "PPPoE user: " + profile.PppoeUsername
         }.Where(part => !string.IsNullOrWhiteSpace(part)));

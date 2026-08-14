@@ -150,7 +150,10 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
             Write(zip, "authenticated-diagnostic-summary.txt", AuthenticatedPayloadSanitizer.Sanitize(summary));
         }
 
-        var inspection = AuthenticatedZipInspector.Inspect(zipPath, identity.SerialNumber, identity.MacAddress);
+        var inspection = AuthenticatedZipInspector.Inspect(zipPath, identity.SerialNumber, identity.MacAddress) with
+        {
+            ConfigurationRequestsSent = snapshot.ConfigPostCount
+        };
         if (!inspection.IsAcceptable)
         {
             File.Delete(zipPath);
@@ -223,8 +226,11 @@ public sealed class ExportAuthenticatedDiagnosticUseCase : IExportAuthenticatedD
         builder.AppendLine("Cookies: não incluídos");
         builder.AppendLine($"IncludesCookies: false");
         builder.AppendLine($"IncludesCredentials: false");
+        builder.AppendLine($"IncludesTokens: false");
         builder.AppendLine($"IncludesRawAuthenticatedHtml: false");
+        builder.AppendLine($"IncludesRawAuthenticatedBody: false");
         builder.AppendLine($"SensitiveIdentifiersMasked: true");
+        builder.AppendLine($"ConfigurationRequestsSent: {snapshot.ConfigPostCount}");
         return builder.ToString();
     }
 }

@@ -87,8 +87,11 @@ public sealed class ExportAuthenticatedDiagnosticTests
 
         result.Value!.Inspection.IncludesCookies.Should().BeFalse();
         result.Value.Inspection.IncludesCredentials.Should().BeFalse();
+        result.Value.Inspection.IncludesTokens.Should().BeFalse();
         result.Value.Inspection.IncludesRawAuthenticatedHtml.Should().BeFalse();
+        result.Value.Inspection.IncludesRawAuthenticatedBody.Should().BeFalse();
         result.Value.Inspection.SensitiveIdentifiersMasked.Should().BeTrue();
+        result.Value.Inspection.ConfigurationRequestsSent.Should().Be(0);
     }
 
     [Fact]

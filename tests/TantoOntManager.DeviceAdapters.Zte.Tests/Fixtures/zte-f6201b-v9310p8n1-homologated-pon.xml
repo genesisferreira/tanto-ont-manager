@@ -1,0 +1,25 @@
+<ajax_response_xml_root>
+  <IF_ERRORSTR>SUCC</IF_ERRORSTR>
+  <OBJ_GPONREGSTATUS_ID>
+    <Instance>
+      <ParaName>ONU State</ParaName>
+      <ParaValue>Initial State(o1)</ParaValue>
+    </Instance>
+  </OBJ_GPONREGSTATUS_ID>
+  <OBJ_PON_OPTICALPARA_ID>
+    <Instance>
+      <ParaName>Input Power</ParaName>
+      <ParaValue>--</ParaValue>
+      <ParaName>Output Power</ParaName>
+      <ParaValue>--</ParaValue>
+      <ParaName>Supply Voltage</ParaName>
+      <ParaValue>3205 mV</ParaValue>
+      <ParaName>Transmitter Bias Current</ParaName>
+      <ParaValue>0.002 mA</ParaValue>
+      <ParaName>Temperature</ParaName>
+      <ParaValue>55.835 °C</ParaValue>
+      <ParaName>LOID</ParaName>
+      <ParaValue>labloid001</ParaValue>
+    </Instance>
+  </OBJ_PON_OPTICALPARA_ID>
+</ajax_response_xml_root>

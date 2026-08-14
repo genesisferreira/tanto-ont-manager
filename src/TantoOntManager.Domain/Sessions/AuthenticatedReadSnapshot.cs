@@ -21,4 +21,26 @@ public sealed record AuthenticatedReadSnapshot(
     int ConfigPostCount)
 {
     public FirmwareCompatibility FirmwareCompatibility { get; init; } = FirmwareCompatibility.Unconfirmed;
+
+    public IReadOnlyList<FieldReadResult> FieldReads { get; init; } = [];
+
+    public IReadOnlyList<HomologatedGetTrace> HomologatedGets { get; init; } = [];
+
+    public string DiagnosticOperatorText()
+    {
+        var lines = new List<string>
+        {
+            "Leitura automática homologada (sanitizada)",
+            $"GET: {HomologatedGets.Count}",
+            $"POST login: {LoginPostCount}",
+            $"POST logout: {LogoutPostCount}",
+            $"POST configuração: {ConfigPostCount}"
+        };
+        foreach (var get in HomologatedGets)
+        {
+            lines.Add(get.ToOperatorLine());
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
 }

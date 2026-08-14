@@ -38,12 +38,12 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 7. Clique em `Exportar diagnóstico público` se precisar arquivar a página pública.
 8. Clique em `Exportar diagnóstico público` se precisar arquivar a página pública.
 9. Se a F6201B foi identificada com confiança suficiente, informe a credencial da etiqueta e clique **uma vez** em `Login`.
-10. Após o login, confira as abas Dispositivo, PON e WAN. Use `Exportar diagnóstico autenticado` e confira a inspeção do ZIP.
+10. Após o login, o aplicativo lê automaticamente Device, PON, WAN Status e WAN Config por GET homologado. Confira as abas Dispositivo, PON e WAN. Use `Exportar diagnóstico autenticado` e confira a inspeção do ZIP.
 11. Clique em `Encerrar sessão` ao terminar. O aplicativo envia no máximo um POST de logout oficial e descarta os cookies.
 
-## Observação passiva de GETs (0.1.6.2-lab)
+## Observação passiva de GETs (fallback 0.1.7-lab)
 
-1. O observador usa o Runtime Evergreen do sistema (`browserExecutableFolder: null`). A pasta temporária é só `userDataFolder`. A instalação em Program Files (x86)/WOW6432Node é válida.
+1. A leitura cotidiana **não** depende do WebView2. O observador permanece só como ferramenta de laboratório e fallback.
 2. Com a F6201B autenticada em modo laboratório, clique em `Observar navegação GET` e confirme.
 3. No WebView2 isolado, feche o baseline do shell e use os botões Device / PON / WAN Status / WAN Config.
 4. Durante os 20 s de cada captura, navegue **manualmente** na tela correspondente da ONT.
@@ -57,7 +57,7 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 - Resposta HTTPS do endereço testado (HTTP pode estar indisponível)
 - Identificação pública `ZTE ZXHN F6201B` com evidências suficientes
 - Login homologado somente para firmware `V9.3.10P8N1`: um POST, cookies em memória
-- Hardware, firmware, boot, PON, temperatura, potência e nomes WAN lidos por GET após autenticação, quando presentes nas páginas allowlist
+- Hardware, firmware, boot, PON, temperatura, potência e dois perfis WAN lidos automaticamente por GET homologado após o login, quando presentes nas respostas
 - Serial e MAC mascarados na UI e na exportação
 
 ## Proibido no laboratório desta fase

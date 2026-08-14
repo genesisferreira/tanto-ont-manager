@@ -15,7 +15,11 @@ public sealed record WanProfile(
     string? Ipv4Address,
     string? MacAddress = null,
     string? PppoeUsername = null,
-    bool? VlanEnabled = null)
+    bool? VlanEnabled = null,
+    string? Mtu = null,
+    string? Dns = null,
+    string? Gateway = null,
+    string? Duration = null)
 {
     public string Summary
         => string.Join(" · ", new[]

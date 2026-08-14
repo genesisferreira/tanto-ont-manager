@@ -228,22 +228,15 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                     authenticatedHome);
             }
 
-            var read = await F6201BAuthenticatedSafeReader.ReadAsync(
-                transport,
-                authenticatedHome.Body,
-                "/",
-                authenticatedHome,
-                cancellationToken);
-
-            var pageBodies = read.Pages.ToArray();
-            var device = F6201BV9310P8N1DeviceInformationParser.Parse(pageBodies);
-            var pon = F6201BV9310P8N1PonParser.Parse(pageBodies);
-            var wan = F6201BV9310P8N1WanParser.Parse(pageBodies);
+            var read = await F6201BHomologatedReadCoordinator.ReadAsync(transport, cancellationToken);
+            var device = read.Device;
+            var pon = read.Pon;
+            var wan = read.Wan;
             var identity = F6201BV9310P8N1AuthenticatedPageParser.ToIdentity(
                 ManufacturerNames.Zte,
                 DeviceModelIds.ZteF6201B,
                 device);
-            var compatibility = F6201BFirmwareCompatibility.Classify(identity);
+            var compatibility = read.FirmwareCompatibility;
             _logger.LogInformation(
                 "Firmware compatibilidade={Compatibility} confirmada={Reliable}",
                 compatibility,
@@ -280,7 +273,9 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                 transport.LogoutPostCount,
                 transport.ConfigPostCount)
             {
-                FirmwareCompatibility = compatibility
+                FirmwareCompatibility = compatibility,
+                FieldReads = read.FieldReads,
+                HomologatedGets = read.Traces
             };
 
             var session = AuthorizedDeviceSession.Authenticated(

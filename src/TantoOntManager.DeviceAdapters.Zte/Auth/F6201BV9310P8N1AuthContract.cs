@@ -76,7 +76,7 @@ public static class F6201BV9310P8N1AuthContract
             return false;
         }
 
-        return Regex.IsMatch(tag, "^[A-Za-z][A-Za-z0-9_\\-]*$");
+        return Regex.IsMatch(tag, "^[A-Za-z][A-Za-z0-9_\\-]*(\\.lua)?$");
     }
 
     public static bool IsAllowedGetType(string? type)
@@ -138,7 +138,8 @@ public static class F6201BV9310P8N1AuthContract
 
         foreach (var pair in query)
         {
-            if (pair.Key is "_type" or "_tag")
+            if (pair.Key is "_type" or "_tag"
+                || F6201BProvenQueryParameter.IsCacheBuster(pair.Key, pair.Value))
             {
                 continue;
             }

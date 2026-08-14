@@ -19,6 +19,13 @@ public static class F6201BProvenQueryParameter
     {
         normalizedName = string.Empty;
         normalizedValue = string.Empty;
+        if (IsCacheBuster(name, value))
+        {
+            normalizedName = "_";
+            normalizedValue = value!;
+            return true;
+        }
+
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(value))
         {
             return false;
@@ -44,6 +51,11 @@ public static class F6201BProvenQueryParameter
         normalizedValue = value;
         return true;
     }
+
+    public static bool IsCacheBuster(string? name, string? value)
+        => name == "_"
+           && !string.IsNullOrEmpty(value)
+           && value.All(char.IsDigit);
 
     public static bool IsSafe(string? name, string? value)
         => TryCreate(name, value, out _, out _);
