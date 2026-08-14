@@ -89,6 +89,12 @@ public sealed class ObservationSessionStore : IObservationSessionStore
     {
         lock (_gate)
         {
+            if (_engine is null && _folder is null && !_open)
+            {
+                _destroyed = true;
+                return _snapshot ?? EmptySnapshot();
+            }
+
             _engine?.Cancel();
             var snapshot = _engine?.Snapshot() ?? _snapshot;
             if (snapshot is not null)
@@ -101,16 +107,19 @@ public sealed class ObservationSessionStore : IObservationSessionStore
             _open = false;
             _destroyed = IsolatedObserverCleanup.DestroyUserDataFolder(_folder);
             _folder = null;
-            return _snapshot ?? new ObservationSnapshot(
-                System.Net.IPAddress.None,
-                ObservationCounters.Zero,
-                [],
-                [],
-                [],
-                string.Empty,
-                string.Empty);
+            return _snapshot ?? EmptySnapshot();
         }
     }
+
+    private static ObservationSnapshot EmptySnapshot()
+        => new(
+            System.Net.IPAddress.None,
+            ObservationCounters.Zero,
+            [],
+            [],
+            [],
+            string.Empty,
+            string.Empty);
 
     public void ClearSnapshot()
     {

@@ -56,6 +56,7 @@ public partial class MainWindow : Window
         }
 
         _observationWindow = new ObservationWindow(store.Engine, store, request) { Owner = this };
+        _observationWindow.InitializationFailed += (_, result) => viewModel.ReportObserverInitializationFailure(result);
         _observationWindow.Closed += (_, _) =>
         {
             _observationWindow = null;

@@ -12,6 +12,7 @@ public static class IsolatedObserverCleanup
         try
         {
             Directory.Delete(folder, true);
+            TryDeleteEmptyObserverParent(folder);
             return !Directory.Exists(folder);
         }
         catch (IOException)
@@ -21,6 +22,31 @@ public static class IsolatedObserverCleanup
         catch (UnauthorizedAccessException)
         {
             return false;
+        }
+    }
+
+    private static void TryDeleteEmptyObserverParent(string folder)
+    {
+        try
+        {
+            var parent = Directory.GetParent(folder);
+            if (parent is null
+                || !parent.Exists
+                || !string.Equals(parent.Name, "observer-webview", StringComparison.OrdinalIgnoreCase)
+                || parent.EnumerateFileSystemInfos().Any())
+            {
+                return;
+            }
+
+            parent.Delete(false);
+        }
+        catch (IOException)
+        {
+            // pasta pai ainda em uso
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // melhor esforço
         }
     }
 }

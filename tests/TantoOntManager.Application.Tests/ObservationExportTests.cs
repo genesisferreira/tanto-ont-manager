@@ -112,6 +112,21 @@ public sealed class ObservationExportAndPromoteTests
     }
 
     [Fact]
+    public void Failed_createasync_cleanup_destroys_empty_folder_and_is_idempotent()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "observer-webview", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var store = new ObservationSessionStore();
+        store.Attach(new ObservationEngine(IPAddress.Parse("192.168.100.1")), folder);
+        store.FinishAndDestroy();
+        store.FinishAndDestroy();
+        Directory.Exists(folder).Should().BeFalse();
+        store.IsOpen.Should().BeFalse();
+        store.TemporaryCookiesDestroyed.Should().BeTrue();
+        store.Engine.Should().BeNull();
+    }
+
+    [Fact]
     public void No_configuration_post_is_recorded_in_snapshot()
     {
         var engine = SeedEngine();

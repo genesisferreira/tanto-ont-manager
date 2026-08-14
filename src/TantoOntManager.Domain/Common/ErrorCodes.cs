@@ -45,4 +45,6 @@ public static class ErrorCodes
     public const string ObservationCancelled = "OBS.CANCELLED";
     public const string ObservationIpChanged = "OBS.IP_CHANGED";
     public const string ObservationExportRequiresCapture = "OBS.EXPORT_REQUIRES_CAPTURE";
+    public const string ObservationWebView2RuntimeNotFound = "OBS.WEBVIEW2_RUNTIME_NOT_FOUND";
+    public const string ObservationInitializationFailed = "OBS.INITIALIZATION_FAILED";
 }

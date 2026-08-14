@@ -8,8 +8,8 @@
     <Company>Tanto Telecom</Company>
     <Product>Tanto ONT Manager</Product>
     <Authors>Tanto Telecom</Authors>
-    <Version>0.1.6</Version>
-    <InformationalVersion>0.1.6-lab</InformationalVersion>
+    <Version>0.1.6.1</Version>
+    <InformationalVersion>0.1.6.1-lab</InformationalVersion>
     <Copyright>Copyright (c) Tanto Telecom</Copyright>
     <NeutralLanguage>pt-BR</NeutralLanguage>
   </PropertyGroup>

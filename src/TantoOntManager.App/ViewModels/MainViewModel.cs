@@ -40,8 +40,10 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IEndAuthenticatedSessionUseCase _endSession;
     private readonly IOntAuthSessionStore _authSession;
     private readonly IObservationSessionStore _observation;
+    private readonly IAuditLogService _audit;
     private readonly LoggingPaths _loggingPaths;
     private CancellationTokenSource _cts = new();
+    private string? _observationFailureMessage;
 
     private EthernetAdapterInfo? _selectedAdapter;
     private string _selectedKnownIp = KnownIp100;
@@ -108,6 +110,7 @@ public sealed class MainViewModel : ViewModelBase
         IEndAuthenticatedSessionUseCase endSession,
         IOntAuthSessionStore authSession,
         IObservationSessionStore observation,
+        IAuditLogService audit,
         LoggingPaths loggingPaths)
     {
         _listAdapters = listAdapters;
@@ -123,6 +126,7 @@ public sealed class MainViewModel : ViewModelBase
         _endSession = endSession;
         _authSession = authSession;
         _observation = observation;
+        _audit = audit;
         _loggingPaths = loggingPaths;
 
         Adapters = new ObservableCollection<EthernetAdapterInfo>();
@@ -823,6 +827,7 @@ public sealed class MainViewModel : ViewModelBase
             return Task.CompletedTask;
         }
 
+        _observationFailureMessage = null;
         var folder = Path.Combine(_loggingPaths.RootDirectory, "observer-webview", Guid.NewGuid().ToString("N"));
         var engine = new ObservationEngine(_authSession.Transport.BoundAddress);
         _observation.Attach(engine, folder);
@@ -890,8 +895,37 @@ public sealed class MainViewModel : ViewModelBase
 
     public void DeclineObservation() => StopObservation("não confirmado");
 
+    public void RequestObserverWindowClose()
+        => ObservationMustStop?.Invoke(this, EventArgs.Empty);
+
+    public void ReportObserverInitializationFailure(ObserverInitializationResult result)
+    {
+        _observation.FinishAndDestroy();
+        _observationFailureMessage = result.OperatorMessage;
+        LastOperation = result.OperatorMessage;
+        ObservationText = result.OperatorMessage;
+        ObservationCounters =
+            "GET observados: 0" + Environment.NewLine +
+            "POST de configuração enviados: 0";
+        _audit.Record(AuditEvent.Create(
+            "observe-navigation-get",
+            result.RuntimeMissing ? "webview2-runtime-missing" : "observer-init-failed",
+            "192.168.100.x",
+            result.ErrorCode + "; " + result.SanitizedLog + "; cookiesTransferred=" + result.CookiesTransferred + "; configPosts=" + result.ConfigurationPostsSent + "; keepMain=true"));
+        RaiseCanExecute();
+    }
+
     public void RefreshObservationPanel()
     {
+        if (_observationFailureMessage is not null)
+        {
+            ObservationText = _observationFailureMessage;
+            ObservationCounters =
+                "GET observados: 0" + Environment.NewLine +
+                "POST de configuração enviados: 0";
+            return;
+        }
+
         var snapshot = _observation.Engine?.Snapshot() ?? _observation.LastSnapshot;
         if (snapshot is null)
         {

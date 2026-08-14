@@ -15,7 +15,9 @@ public partial class ObservationWindow : Window
     private readonly ObservationLaunchRequest _request;
     private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly HashSet<string> _allowedRequests = new(StringComparer.OrdinalIgnoreCase);
-    private bool _initialized;
+    private readonly ObserverStartupState _startup = new();
+    private bool _closing;
+    private bool _failed;
 
     public ObservationWindow(ObservationEngine engine, IObservationSessionStore store, ObservationLaunchRequest request)
     {
@@ -25,101 +27,193 @@ public partial class ObservationWindow : Window
         _request = request;
         Closed += (_, _) => Cleanup();
         _refresh.Tick += (_, _) => RefreshPanel();
-        Loaded += async (_, _) => await StartAsync();
+        Loaded += OnLoaded;
+    }
+
+    public event EventHandler<ObserverInitializationResult>? InitializationFailed;
+
+    private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await StartAsync();
+        }
+        catch (Exception ex)
+        {
+            FailClosed(ex);
+        }
     }
 
     private async Task StartAsync()
     {
-        Directory.CreateDirectory(_request.UserDataFolder);
-        var environment = await CoreWebView2Environment.CreateAsync(_request.UserDataFolder);
-        await WebView.EnsureCoreWebView2Async(environment);
-        var core = WebView.CoreWebView2;
-        core.Settings.AreDefaultContextMenusEnabled = true;
-        core.Settings.AreDevToolsEnabled = false;
-        core.Settings.AreHostObjectsAllowed = false;
-        core.Settings.IsWebMessageEnabled = false;
-        core.Settings.IsGeneralAutofillEnabled = false;
-        core.Settings.IsPasswordAutosaveEnabled = false;
-        core.Settings.AreBrowserAcceleratorKeysEnabled = false;
-        core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
-        core.WebResourceRequested += OnWebResourceRequested;
-        core.WebResourceResponseReceived += OnWebResourceResponseReceived;
-        core.NewWindowRequested += (_, args) =>
+        if (!_startup.TryBegin())
         {
-            args.Handled = true;
-            _engine.Evaluate(new IncomingObservationRequest("GET", new Uri(args.Uri), IsNewWindow: true));
-        };
-        core.DownloadStarting += (_, args) =>
-        {
-            args.Cancel = true;
-            args.Handled = true;
-            if (Uri.TryCreate(args.DownloadOperation.Uri, UriKind.Absolute, out var uri))
-            {
-                _engine.Evaluate(new IncomingObservationRequest("GET", uri, IsDownload: true));
-            }
-        };
-        core.NavigationStarting += (_, args) =>
-        {
-            if (!Uri.TryCreate(args.Uri, UriKind.Absolute, out var uri))
-            {
-                args.Cancel = true;
-                return;
-            }
-
-            if (!ObservationHosts.IsBoundHost(uri, _request.BoundAddress))
-            {
-                args.Cancel = true;
-                _engine.EndBecauseIpChanged();
-                return;
-            }
-
-            if (ObservationRequestGate.HasActionToken(uri))
-            {
-                args.Cancel = true;
-            }
-        };
-        core.ServerCertificateErrorDetected += (_, args) =>
-        {
-            args.Action = ObservationHosts.IsBoundHost(new Uri(args.RequestUri), _request.BoundAddress)
-                ? CoreWebView2ServerCertificateErrorAction.AlwaysAllow
-                : CoreWebView2ServerCertificateErrorAction.Cancel;
-        };
-
-        var cookieManager = core.CookieManager;
-        foreach (var seed in _request.Cookies)
-        {
-            var cookie = cookieManager.CreateCookie(seed.Name, seed.RevealValueForIsolatedWebView(), seed.Domain, seed.Path);
-            cookie.IsSecure = seed.Secure;
-            cookie.IsHttpOnly = seed.HttpOnly;
-            cookieManager.AddOrUpdateCookie(cookie);
+            return;
         }
 
-        _initialized = true;
-        _refresh.Start();
-        StatusText.Text = _request.Cookies.Count == 0
-            ? "WebView2 isolado sem cookie transferível. POST permanece bloqueado. Navegue só se a sessão já autenticada carregar."
-            : "Sessão isolada com cookies em memória. Navegue manualmente: Status, PON Information, WAN Status e WAN.";
-        core.Navigate(_request.StartUri.ToString());
-        RefreshPanel();
+        try
+        {
+            Directory.CreateDirectory(_request.UserDataFolder);
+            var environment = await CoreWebView2Environment.CreateAsync(_request.UserDataFolder);
+            await WebView.EnsureCoreWebView2Async(environment);
+            var core = WebView.CoreWebView2
+                       ?? throw new InvalidOperationException("CoreWebView2 não inicializado.");
+            _startup.MarkCoreReady();
+            core.Settings.AreDefaultContextMenusEnabled = true;
+            core.Settings.AreDevToolsEnabled = false;
+            core.Settings.AreHostObjectsAllowed = false;
+            core.Settings.IsWebMessageEnabled = false;
+            core.Settings.IsGeneralAutofillEnabled = false;
+            core.Settings.IsPasswordAutosaveEnabled = false;
+            core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+            core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+            core.WebResourceRequested += OnWebResourceRequested;
+            core.WebResourceResponseReceived += OnWebResourceResponseReceived;
+            core.NewWindowRequested += (_, args) =>
+            {
+                args.Handled = true;
+                _engine.Evaluate(new IncomingObservationRequest("GET", new Uri(args.Uri), IsNewWindow: true));
+            };
+            core.DownloadStarting += (_, args) =>
+            {
+                args.Cancel = true;
+                args.Handled = true;
+                if (Uri.TryCreate(args.DownloadOperation.Uri, UriKind.Absolute, out var uri))
+                {
+                    _engine.Evaluate(new IncomingObservationRequest("GET", uri, IsDownload: true));
+                }
+            };
+            core.NavigationStarting += (_, args) =>
+            {
+                if (!Uri.TryCreate(args.Uri, UriKind.Absolute, out var uri))
+                {
+                    args.Cancel = true;
+                    return;
+                }
+
+                if (!ObservationHosts.IsBoundHost(uri, _request.BoundAddress))
+                {
+                    args.Cancel = true;
+                    _engine.EndBecauseIpChanged();
+                    return;
+                }
+
+                if (ObservationRequestGate.HasActionToken(uri))
+                {
+                    args.Cancel = true;
+                }
+            };
+            core.ServerCertificateErrorDetected += (_, args) =>
+            {
+                args.Action = ObservationHosts.IsBoundHost(new Uri(args.RequestUri), _request.BoundAddress)
+                    ? CoreWebView2ServerCertificateErrorAction.AlwaysAllow
+                    : CoreWebView2ServerCertificateErrorAction.Cancel;
+            };
+
+            if (_startup.TryTransferCookies())
+            {
+                var cookieManager = core.CookieManager;
+                foreach (var seed in _request.Cookies)
+                {
+                    var cookie = cookieManager.CreateCookie(seed.Name, seed.RevealValueForIsolatedWebView(), seed.Domain, seed.Path);
+                    cookie.IsSecure = seed.Secure;
+                    cookie.IsHttpOnly = seed.HttpOnly;
+                    cookieManager.AddOrUpdateCookie(cookie);
+                }
+            }
+
+            _refresh.Start();
+            StatusText.Text = _request.Cookies.Count == 0
+                ? "WebView2 isolado sem cookie transferível. POST permanece bloqueado. Navegue só se a sessão já autenticada carregar."
+                : "Sessão isolada com cookies em memória. Navegue manualmente: Status, PON Information, WAN Status e WAN.";
+            core.Navigate(_request.StartUri.ToString());
+            RefreshPanel();
+        }
+        catch (WebView2RuntimeNotFoundException ex)
+        {
+            FailClosed(ex);
+        }
+        catch (FileNotFoundException ex)
+        {
+            FailClosed(ex);
+        }
+        catch (Exception ex)
+        {
+            FailClosed(ex);
+        }
+    }
+
+    private void FailClosed(Exception exception)
+    {
+        if (_failed)
+        {
+            return;
+        }
+
+        _failed = true;
+        var result = ObserverInitializationGuard.FromException(exception, _startup.CookiesTransferred);
+        try
+        {
+            StatusText.Text = result.OperatorMessage;
+        }
+        catch (Exception)
+        {
+            // janela já em fechamento
+        }
+
+        InitializationFailed?.Invoke(this, result);
+        Cleanup();
+        RequestCloseObserverOnly();
+    }
+
+    private void RequestCloseObserverOnly()
+    {
+        if (_closing)
+        {
+            return;
+        }
+
+        _closing = true;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            try
+            {
+                if (IsVisible || IsLoaded)
+                {
+                    Close();
+                }
+            }
+            catch (Exception)
+            {
+                // já fechada
+            }
+        }), DispatcherPriority.Background);
     }
 
     private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs args)
     {
-        if (!Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out var uri))
+        try
+        {
+            if (!Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out var uri))
+            {
+                args.Response = CreateBlockedResponse();
+                return;
+            }
+
+            var decision = _engine.Evaluate(new IncomingObservationRequest(args.Request.Method, uri));
+            if (decision.Allowed)
+            {
+                _allowedRequests.Add(ObservationUrl.Normalize(uri) + "|" + args.Request.Method);
+                return;
+            }
+
+            args.Response = CreateBlockedResponse();
+            Dispatcher.Invoke(RefreshPanel);
+        }
+        catch (Exception)
         {
             args.Response = CreateBlockedResponse();
-            return;
         }
-
-        var decision = _engine.Evaluate(new IncomingObservationRequest(args.Request.Method, uri));
-        if (decision.Allowed)
-        {
-            _allowedRequests.Add(ObservationUrl.Normalize(uri) + "|" + args.Request.Method);
-            return;
-        }
-
-        args.Response = CreateBlockedResponse();
-        Dispatcher.Invoke(RefreshPanel);
     }
 
     private async void OnWebResourceResponseReceived(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs args)
@@ -254,21 +348,37 @@ public partial class ObservationWindow : Window
 
     private void Cleanup()
     {
+        if (!_startup.TryCleanup())
+        {
+            return;
+        }
+
         _refresh.Stop();
         try
         {
-            WebView.CoreWebView2?.CookieManager.DeleteAllCookies();
-            WebView.CoreWebView2?.Stop();
+            if (_startup.CoreReady)
+            {
+                WebView.CoreWebView2?.CookieManager.DeleteAllCookies();
+                WebView.CoreWebView2?.Stop();
+            }
         }
         catch (Exception)
         {
-            // encerramento best-effort
+            // encerramento best-effort com inicialização parcial
         }
 
         _store.FinishAndDestroy();
-        if (_initialized)
+        ObserverInitializationGuard.DestroyTemporaryFolder(_request.UserDataFolder);
+        if (_startup.TryDisposeWebView())
         {
-            WebView.Dispose();
+            try
+            {
+                WebView.Dispose();
+            }
+            catch (Exception)
+            {
+                // Dispose duplicado ou controle já destruído
+            }
         }
     }
 }
