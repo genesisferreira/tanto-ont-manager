@@ -1,32 +1,13 @@
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using TantoOntManager.Domain.Discovery;
 
 namespace TantoOntManager.DeviceAdapters.Zte.Auth;
 
 public static class F6201BSafeReadDiscovery
 {
-    private static readonly Regex MenuPage = new(
-        "MenuPage\\s*=\\s*['\"]([A-Za-z0-9_\\-]+)['\"]",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex OpenLink = new(
-        "openLink\\(\\s*['\"]([A-Za-z0-9_\\-]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex TypedTag = new(
-        "_type=(menuView|menuData|hiddenData)&_tag=([A-Za-z0-9_\\-]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex TagThenType = new(
-        "_tag=([A-Za-z0-9_\\-]+)&_type=(menuView|menuData|hiddenData)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex ExtraQuery = new(
-        "_type=(?:menuView|menuData|hiddenData)&_tag=[A-Za-z0-9_\\-]+&(?!Menu3Location=)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    public static IReadOnlyList<SafeReadInventoryItem> Discover(string? html, string evidencePage = "/")
+    public static IReadOnlyList<SafeReadInventoryItem> Discover(
+        string? html,
+        string evidencePage = "/",
+        RouteTemplateSet extraTemplates = default)
     {
         if (string.IsNullOrWhiteSpace(html))
         {
@@ -35,66 +16,94 @@ public static class F6201BSafeReadDiscovery
 
         var items = new List<SafeReadInventoryItem>();
         var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var templates = F6201BStaticRouteResolver.DetectTemplates(html).Union(extraTemplates);
+        var menuByTag = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        void Add(string type, string tag, string source, string? menuText = null, bool folder = false)
+        void Add(SafeReadInventoryItem item)
         {
-            var classified = Classify(type, tag, source, html, menuText, folder);
-            var key = F6201BV9310P8N1AuthContract.MakeKey(classified.Type, classified.Tag);
+            var key = string.IsNullOrWhiteSpace(item.TypeAndTag)
+                ? "unresolved:" + (item.Variable ?? item.Tag)
+                : item.TypeAndTag;
             if (!seenKeys.Add(key))
             {
-                if (classified.Classification == SafeReadClassification.SafeRead)
+                var idx = items.FindIndex(candidate => candidate.TypeAndTag.Equals(key, StringComparison.OrdinalIgnoreCase));
+                if (idx >= 0)
                 {
-                    items.Add(classified.Item with
-                    {
-                        Classification = SafeReadClassification.Duplicate,
-                        ClassificationReason = "Tag já inventariada nesta página.",
-                        WasAccessed = false
-                    });
+                    items[idx] = Enrich(items[idx], item);
                 }
 
                 return;
             }
 
-            items.Add(classified.Item);
+            items.Add(item);
         }
 
-        var menuByTag = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var node in ExtractMenuNodes(html))
+        foreach (var node in F6201BMenuTreeExtractor.Extract(html))
         {
             if (!string.IsNullOrWhiteSpace(node.Path))
             {
                 menuByTag[node.Id] = node.Path;
             }
 
-            Add("menuView", node.Id, $"menuTreeJSON:{node.Kind}@{evidencePage}", node.Path, folder: node.Kind == "folder");
+            var extras = node.Kind == "page" ? F6201BStaticRouteResolver.Menu3Extras(templates) : new Dictionary<string, string>();
+            Add(Classify(
+                "menuView",
+                node.Id,
+                $"menuTreeJSON:{node.Kind}@{evidencePage}",
+                node.Path,
+                folder: node.Kind == "folder",
+                extras,
+                F6201BStaticRouteResolver.KindOf("menuView", node.Id, node.Kind == "folder"),
+                RouteConfidence.High,
+                "id",
+                node.Id,
+                "{id,name,children,area}",
+                node.Kind == "folder"
+                    ? "Nó de pasta do menuTreeJSON; GET não iniciado sem evidência de folha."
+                    : "id literal do menuTreeJSON associado ao template menuView."));
         }
 
-        foreach (Match match in MenuPage.Matches(html))
+        var resolved = F6201BStaticRouteResolver.Resolve(html, evidencePage, templates);
+        foreach (var route in resolved.Routes)
         {
-            var tag = match.Groups[1].Value;
-            menuByTag.TryGetValue(tag, out var path);
-            Add("menuView", tag, $"MenuPage@{evidencePage}", path);
-        }
+            if (route.Unresolved)
+            {
+                Add(new SafeReadInventoryItem(
+                    route.Variable ?? "unresolved",
+                    route.EvidenceSource,
+                    "GET",
+                    null,
+                    0,
+                    string.Empty,
+                    SafeReadClassification.UnknownNotAccessed,
+                    route.Reason,
+                    false)
+                {
+                    TypeAndTag = "unresolved:" + (route.Variable ?? "route"),
+                    MenuText = route.MenuText,
+                    RouteKind = AuthenticatedRouteKind.UnresolvedDynamicRoute,
+                    Confidence = RouteConfidence.None,
+                    Variable = route.Variable,
+                    LiteralValue = route.LiteralValue,
+                    SanitizedSnippet = route.SanitizedSnippet
+                });
+                continue;
+            }
 
-        foreach (Match match in OpenLink.Matches(html))
-        {
-            var tag = match.Groups[1].Value;
-            menuByTag.TryGetValue(tag, out var path);
-            Add("menuView", tag, $"openLink@{evidencePage}", path);
-        }
-
-        foreach (Match match in TypedTag.Matches(html))
-        {
-            var tag = match.Groups[2].Value;
-            menuByTag.TryGetValue(tag, out var path);
-            Add(match.Groups[1].Value, tag, $"_type+_tag@{evidencePage}", path);
-        }
-
-        foreach (Match match in TagThenType.Matches(html))
-        {
-            var tag = match.Groups[1].Value;
-            menuByTag.TryGetValue(tag, out var path);
-            Add(match.Groups[2].Value, tag, $"_tag+_type@{evidencePage}", path);
+            menuByTag.TryGetValue(route.Tag, out var path);
+            Add(Classify(
+                route.Type,
+                route.Tag,
+                route.EvidenceSource,
+                route.MenuText ?? path,
+                route.Folder,
+                route.ExtraParameters,
+                route.Kind,
+                route.Confidence,
+                route.Variable,
+                route.LiteralValue,
+                route.SanitizedSnippet,
+                route.Reason));
         }
 
         return Prioritize(items);
@@ -111,13 +120,10 @@ public static class F6201BSafeReadDiscovery
             var key = item.TypeAndTag;
             if (!keys.Add(key))
             {
-                if (item.WasAccessed)
+                var idx = result.FindIndex(candidate => candidate.TypeAndTag.Equals(key, StringComparison.OrdinalIgnoreCase));
+                if (idx >= 0)
                 {
-                    var idx = result.FindIndex(candidate => candidate.TypeAndTag.Equals(key, StringComparison.OrdinalIgnoreCase));
-                    if (idx >= 0)
-                    {
-                        result[idx] = item;
-                    }
+                    result[idx] = item.WasAccessed ? item : Enrich(result[idx], item);
                 }
 
                 continue;
@@ -127,6 +133,24 @@ public static class F6201BSafeReadDiscovery
         }
 
         return Prioritize(result);
+    }
+
+    private static SafeReadInventoryItem Enrich(SafeReadInventoryItem current, SafeReadInventoryItem incoming)
+    {
+        return current with
+        {
+            MenuText = current.MenuText ?? incoming.MenuText,
+            ExtraParameters = F6201BProvenQueryParameter.Merge(current.ExtraParameters, incoming.ExtraParameters),
+            Variable = current.Variable ?? incoming.Variable,
+            LiteralValue = current.LiteralValue ?? incoming.LiteralValue,
+            SanitizedSnippet = string.IsNullOrWhiteSpace(current.SanitizedSnippet) ? incoming.SanitizedSnippet : current.SanitizedSnippet,
+            Confidence = incoming.Confidence > current.Confidence ? incoming.Confidence : current.Confidence,
+            RouteKind = incoming.RouteKind == AuthenticatedRouteKind.UnresolvedDynamicRoute
+                ? current.RouteKind
+                : current.RouteKind == default
+                    ? incoming.RouteKind
+                    : current.RouteKind
+        };
     }
 
     private static IReadOnlyList<SafeReadInventoryItem> Prioritize(IReadOnlyList<SafeReadInventoryItem> items)
@@ -146,39 +170,52 @@ public static class F6201BSafeReadDiscovery
             return 80;
         }
 
-        if (item.EvidenceSource.Contains("menuTreeJSON:page", StringComparison.OrdinalIgnoreCase)
-            || item.Tag.Equals("homePage", StringComparison.OrdinalIgnoreCase)
-            || F6201BPriorityMenu.Match(item.MenuText) is not null)
+        if (F6201BPriorityMenu.Match(item.MenuText) is not null)
         {
             return 0;
         }
 
-        if (item.EvidenceSource.Contains("MenuPage", StringComparison.OrdinalIgnoreCase))
+        if (item.RouteKind == AuthenticatedRouteKind.MenuLeaf
+            || item.EvidenceSource.Contains("menuTreeJSON:page", StringComparison.OrdinalIgnoreCase)
+            || item.Tag.Equals("homePage", StringComparison.OrdinalIgnoreCase))
         {
             return 1;
         }
 
-        if (item.EvidenceSource.Contains("_type+_tag", StringComparison.OrdinalIgnoreCase)
-            || item.EvidenceSource.Contains("_tag+_type", StringComparison.OrdinalIgnoreCase))
+        if (item.RouteKind == AuthenticatedRouteKind.DataEndpoint
+            || item.EvidenceSource.Contains("MenuPage", StringComparison.OrdinalIgnoreCase))
         {
             return 2;
         }
 
-        if (item.EvidenceSource.Contains("openLink", StringComparison.OrdinalIgnoreCase))
+        if (item.EvidenceSource.Contains("_type+_tag", StringComparison.OrdinalIgnoreCase)
+            || item.EvidenceSource.Contains("literalUrl", StringComparison.OrdinalIgnoreCase)
+            || item.EvidenceSource.Contains("concat:", StringComparison.OrdinalIgnoreCase))
         {
             return 3;
+        }
+
+        if (item.RouteKind == AuthenticatedRouteKind.HomepageShell)
+        {
+            return 5;
         }
 
         return 4;
     }
 
-    private static (string Type, string Tag, SafeReadInventoryItem Item, SafeReadClassification Classification) Classify(
+    private static SafeReadInventoryItem Classify(
         string type,
         string tag,
         string source,
-        string html,
         string? menuText,
-        bool folder)
+        bool folder,
+        IReadOnlyDictionary<string, string> extras,
+        AuthenticatedRouteKind kind,
+        RouteConfidence confidence,
+        string? variable,
+        string? literal,
+        string? snippet,
+        string reason)
     {
         var normalizedType = string.IsNullOrWhiteSpace(type) ? "menuView" : type;
         var itemBase = new SafeReadInventoryItem(
@@ -193,194 +230,75 @@ public static class F6201BSafeReadDiscovery
             false)
         {
             TypeAndTag = F6201BV9310P8N1AuthContract.MakeKey(normalizedType, tag),
-            MenuText = menuText
+            MenuText = menuText,
+            ExtraParameters = extras,
+            RouteKind = kind,
+            Confidence = confidence,
+            Variable = variable,
+            LiteralValue = literal,
+            SanitizedSnippet = snippet
         };
 
         if (!F6201BV9310P8N1AuthContract.IsValidTag(tag)
             || !F6201BV9310P8N1AuthContract.IsAllowedGetType(normalizedType))
         {
-            var invalid = itemBase with
+            return itemBase with
             {
                 Classification = SafeReadClassification.Invalid,
                 ClassificationReason = "Tag ou tipo GET inválido."
             };
-            return (normalizedType, tag, invalid, SafeReadClassification.Invalid);
         }
 
         if (F6201BV9310P8N1AuthContract.IsAuthControlTag(tag))
         {
-            var skipped = itemBase with
+            return itemBase with
             {
                 Classification = SafeReadClassification.Invalid,
                 ClassificationReason = "Tag de controle de autenticação; não é leitura de dados."
             };
-            return (normalizedType, tag, skipped, SafeReadClassification.Invalid);
         }
 
         var safety = F6201BTagSafety.Classify(tag);
-        if (safety.Blocked || LooksLikeActionUrl(html, normalizedType, tag))
+        if (safety.Blocked)
         {
-            var blocked = itemBase with
+            return itemBase with
             {
                 Classification = SafeReadClassification.BlockedPotentialAction,
-                ClassificationReason = safety.Blocked
-                    ? safety.Reason
-                    : "URL associada a query extra além de _type/_tag/Menu3Location."
+                ClassificationReason = safety.Reason,
+                RouteKind = AuthenticatedRouteKind.ActionEndpoint
             };
-            return (normalizedType, tag, blocked, SafeReadClassification.BlockedPotentialAction);
         }
 
-        if (folder)
+        if (folder || kind == AuthenticatedRouteKind.MenuFolder)
         {
-            var folderItem = itemBase with
+            return itemBase with
             {
                 Classification = SafeReadClassification.UnknownNotAccessed,
-                ClassificationReason = "Nó de pasta do menu; GET não iniciado sem evidência de folha."
+                ClassificationReason = string.IsNullOrWhiteSpace(reason)
+                    ? "Nó de pasta do menu; GET não iniciado sem evidência de folha."
+                    : reason,
+                RouteKind = AuthenticatedRouteKind.MenuFolder
             };
-            return (normalizedType, tag, folderItem, SafeReadClassification.UnknownNotAccessed);
         }
 
-        var safe = itemBase with
+        if (kind == AuthenticatedRouteKind.UnresolvedDynamicRoute)
+        {
+            return itemBase with
+            {
+                Classification = SafeReadClassification.UnknownNotAccessed,
+                ClassificationReason = reason,
+                RouteKind = AuthenticatedRouteKind.UnresolvedDynamicRoute,
+                Confidence = RouteConfidence.None
+            };
+        }
+
+        return itemBase with
         {
             Classification = SafeReadClassification.SafeRead,
-            ClassificationReason = "Referenciada explicitamente na interface autenticada, sem token de ação."
+            ClassificationReason = string.IsNullOrWhiteSpace(reason)
+                ? "Referenciada explicitamente na interface autenticada, sem token de ação."
+                : reason,
+            RouteKind = kind == default ? F6201BStaticRouteResolver.KindOf(normalizedType, tag, false) : kind
         };
-        return (normalizedType, tag, safe, SafeReadClassification.SafeRead);
-    }
-
-    private static bool LooksLikeActionUrl(string html, string type, string tag)
-    {
-        var needle = $"_type={type}&_tag={tag}&";
-        var idx = html.IndexOf(needle, StringComparison.OrdinalIgnoreCase);
-        if (idx < 0)
-        {
-            return false;
-        }
-
-        var window = html.Substring(idx, Math.Min(120, html.Length - idx));
-        return ExtraQuery.IsMatch(window);
-    }
-
-    private static IReadOnlyList<(string Id, string Kind, string Path)> ExtractMenuNodes(string html)
-    {
-        var json = ExtractJsonArray(html, "menuTreeJSON");
-        if (json is null)
-        {
-            return [];
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var nodes = new List<(string Id, string Kind, string Path)>();
-            Walk(document.RootElement, nodes, parentPath: string.Empty);
-            return nodes;
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-    }
-
-    private static void Walk(JsonElement element, List<(string Id, string Kind, string Path)> nodes, string parentPath)
-    {
-        if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var child in element.EnumerateArray())
-            {
-                Walk(child, nodes, parentPath);
-            }
-
-            return;
-        }
-
-        if (element.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
-
-        string? id = null;
-        string? name = null;
-        var hasArea = false;
-        var hasChildren = false;
-        JsonElement children = default;
-        foreach (var property in element.EnumerateObject())
-        {
-            if (property.NameEquals("id") && property.Value.ValueKind == JsonValueKind.String)
-            {
-                id = property.Value.GetString();
-            }
-            else if (property.NameEquals("name") && property.Value.ValueKind == JsonValueKind.String)
-            {
-                name = property.Value.GetString();
-            }
-            else if (property.NameEquals("area"))
-            {
-                hasArea = true;
-            }
-            else if (property.NameEquals("children") && property.Value.ValueKind == JsonValueKind.Array)
-            {
-                hasChildren = true;
-                children = property.Value;
-            }
-        }
-
-        var label = !string.IsNullOrWhiteSpace(name) ? name : id;
-        var path = string.IsNullOrWhiteSpace(parentPath)
-            ? label ?? string.Empty
-            : parentPath + " → " + label;
-
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            var kind = hasArea || !hasChildren ? "page" : "folder";
-            nodes.Add((id, kind, path));
-        }
-
-        if (hasChildren)
-        {
-            Walk(children, nodes, path);
-        }
-    }
-
-    private static string? ExtractJsonArray(string html, string variableName)
-    {
-        var needle = variableName + " =";
-        var idx = html.IndexOf(needle, StringComparison.Ordinal);
-        if (idx < 0)
-        {
-            needle = variableName + "=";
-            idx = html.IndexOf(needle, StringComparison.Ordinal);
-        }
-
-        if (idx < 0)
-        {
-            return null;
-        }
-
-        var start = html.IndexOf('[', idx);
-        if (start < 0)
-        {
-            return null;
-        }
-
-        var depth = 0;
-        for (var i = start; i < html.Length; i++)
-        {
-            var ch = html[i];
-            if (ch == '[')
-            {
-                depth++;
-            }
-            else if (ch == ']')
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return html[start..(i + 1)];
-                }
-            }
-        }
-
-        return null;
     }
 }

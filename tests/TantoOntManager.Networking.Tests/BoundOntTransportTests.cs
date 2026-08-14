@@ -47,6 +47,24 @@ public sealed class BoundOntTransportTests
     }
 
     [Fact]
+    public async Task Proven_extra_query_is_allowed_unproven_is_not()
+    {
+        var handler = new ScriptedHandler();
+        MapDefaults(handler);
+        handler.Map["https://192.168.100.1/"] = Html("<script>var extra=\"/?_type=hiddenData&_tag=accessdev_data&DeveiceType=PC\";</script>");
+        handler.Map["https://192.168.100.1/?_type=hiddenData&_tag=accessdev_data&DeveiceType=PC"] = Html("devices");
+        var transport = Create(handler);
+        await transport.GetAsync("/", CancellationToken.None);
+        var allowed = await transport.GetAsync("/?_type=hiddenData&_tag=accessdev_data&DeveiceType=PC", CancellationToken.None);
+        var wrongValue = await transport.GetAsync("/?_type=hiddenData&_tag=accessdev_data&DeveiceType=Other", CancellationToken.None);
+        var token = await transport.GetAsync("/?_type=hiddenData&_tag=accessdev_data&token=abc", CancellationToken.None);
+        allowed.Succeeded.Should().BeTrue();
+        wrongValue.Succeeded.Should().BeFalse();
+        token.Succeeded.Should().BeFalse();
+        transport.ConfigPostCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Hidden_data_is_allowlisted_only_when_discovered()
     {
         var handler = new ScriptedHandler();

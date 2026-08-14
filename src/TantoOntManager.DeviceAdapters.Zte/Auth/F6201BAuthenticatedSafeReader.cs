@@ -50,7 +50,8 @@ public static class F6201BAuthenticatedSafeReader
 
             var type = key.Split(':')[0];
             var tag = next.Tag;
-            var path = F6201BV9310P8N1AuthContract.BuildGetPath(type, tag);
+            var path = F6201BV9310P8N1AuthContract.BuildGetPath(type, tag, next.ExtraParameters);
+            transport.RememberProvenQueryParameters(type, tag, next.ExtraParameters);
             var page = await transport.GetAsync(path, cancellationToken);
             if (!page.Succeeded)
             {
@@ -132,7 +133,7 @@ public static class F6201BAuthenticatedSafeReader
             var parts = item.TypeAndTag.Split(':');
             if (parts.Length == 2)
             {
-                transport.RememberSafeRead(parts[0], parts[1]);
+                transport.RememberProvenQueryParameters(parts[0], parts[1], item.ExtraParameters);
             }
         }
     }

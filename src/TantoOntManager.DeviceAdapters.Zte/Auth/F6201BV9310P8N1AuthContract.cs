@@ -78,10 +78,18 @@ public static class F6201BV9310P8N1AuthContract
         => !string.IsNullOrWhiteSpace(type)
            && AllowedGetTypes.Contains(type, StringComparer.OrdinalIgnoreCase);
 
-    public static string BuildGetPath(string type, string tag)
-        => $"/?_type={type}&_tag={tag}";
+    public static string BuildGetPath(string type, string tag, IReadOnlyDictionary<string, string>? extras = null)
+    {
+        var path = $"/?_type={type}&_tag={tag}";
+        var formatted = F6201BProvenQueryParameter.Format(extras);
+        return string.IsNullOrEmpty(formatted) ? path : path + "&" + formatted;
+    }
 
-    public static bool IsAllowedGet(Uri uri, IPAddress boundAddress, IReadOnlyCollection<string> discoveredKeys)
+    public static bool IsAllowedGet(
+        Uri uri,
+        IPAddress boundAddress,
+        IReadOnlyCollection<string> discoveredKeys,
+        Func<string, string, string, bool>? extraIsProven = null)
     {
         if (uri.Scheme is not ("http" or "https"))
         {
@@ -117,10 +125,24 @@ public static class F6201BV9310P8N1AuthContract
         if (!IsAllowedGetType(type)
             || !IsValidTag(tag)
             || IsDestructiveTag(tag)
-            || IsAuthControlTag(tag)
-            || !query.Keys.All(key => key is "_type" or "_tag" or "Menu3Location"))
+            || IsAuthControlTag(tag))
         {
             return false;
+        }
+
+        foreach (var pair in query)
+        {
+            if (pair.Key is "_type" or "_tag")
+            {
+                continue;
+            }
+
+            if (extraIsProven is null
+                || !F6201BProvenQueryParameter.IsSafe(pair.Key, pair.Value)
+                || !extraIsProven(MakeKey(type!, tag!), pair.Key, pair.Value))
+            {
+                return false;
+            }
         }
 
         var key = MakeKey(type!, tag!);
@@ -166,7 +188,7 @@ public static class F6201BV9310P8N1AuthContract
 
         var safe = query.Select(pair =>
         {
-            if (pair.Key is "_type" or "_tag" or "Menu3Location")
+            if (pair.Key is "_type" or "_tag" || F6201BProvenQueryParameter.IsSafe(pair.Key, pair.Value))
             {
                 return $"{pair.Key}={pair.Value}";
             }

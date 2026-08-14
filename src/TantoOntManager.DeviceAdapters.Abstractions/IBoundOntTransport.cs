@@ -61,6 +61,11 @@ public interface IBoundOntTransport : IDisposable
 
     void RememberSafeRead(string type, string tag);
 
+    void RememberProvenQueryParameters(string type, string tag, IReadOnlyDictionary<string, string> extras)
+    {
+        RememberSafeRead(type, tag);
+    }
+
     void RememberReferencedAsset(string relativePath);
 
     void ClearCookiesAndState(string reason);

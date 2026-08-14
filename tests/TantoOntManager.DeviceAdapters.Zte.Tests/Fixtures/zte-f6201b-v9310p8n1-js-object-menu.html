@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><title>F6201B</title></head>
+<body>
+<script>
+if (menuTreeJSON == null) { var decoy = [1]; }
+var menuTreeJSON = [{id:'mgrAndDiag',name:'Management & Diagnosis',children:[{id:'devStatus',name:'Status',area:[{area:'status_t.lp'}]}]},{id:'internet',name:'Internet',children:[{id:'ponInfo',name:'PON Information'},{id:'ethWan',name:'WAN',},]}];
+var pageurl = "pon_status";
+var alias = pageurl;
+function openLink(pageurl, areaId) { var PageName = "/?_type=menuView&_tag=" + pageurl; AjaxPageGet(PageName, 1, areaId); }
+function AjaxQuery_ClassMenuClick(MenuOBJ) { var page = MenuOBJ.attr("MenuPage"); var pageFile = "/?_type=menuView&_tag=" + page + "&Menu3Location=0"; }
+var extra = "/?_type=hiddenData&_tag=accessdev_data&DeveiceType=PC";
+var data = "/?_type=menuData&_tag=" + alias;
+</script>
+<p MenuPage="devStatus">Status</p>
+</body>
+</html>

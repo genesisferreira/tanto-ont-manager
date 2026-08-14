@@ -53,11 +53,6 @@ public static class F6201BV9310P8N1Logout
         }
 
         var body = response.Body ?? string.Empty;
-        if (body.Contains("This page has expired, please refresh and try again.", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
         if (string.IsNullOrWhiteSpace(body))
         {
             return true;
@@ -69,7 +64,37 @@ public static class F6201BV9310P8N1Logout
             return true;
         }
 
-        return !body.Contains("need_refresh", StringComparison.OrdinalIgnoreCase)
-               && !F6201BHtmlText.LooksLikeSessionExpired(body);
+        if (LooksLikeStillAuthenticatedShell(body))
+        {
+            return false;
+        }
+
+        return LooksLikeZteLogoutAck(body) || F6201BHtmlText.LooksLikeLoginPage(body);
+    }
+
+    private static bool LooksLikeStillAuthenticatedShell(string body)
+        => F6201BHtmlText.Classify(body) == AuthenticatedPageKind.AuthenticatedPage;
+
+    private static bool LooksLikeZteLogoutAck(string body)
+    {
+        if (body.Contains("<html", StringComparison.OrdinalIgnoreCase)
+            && !F6201BHtmlText.LooksLikeLoginPage(body))
+        {
+            return false;
+        }
+
+        if (body.Contains("This page has expired, please refresh and try again.", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (body.Contains("need_refresh", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("sess_token", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var trimmed = body.Trim();
+        return trimmed.StartsWith('{') && trimmed.EndsWith('}');
     }
 }

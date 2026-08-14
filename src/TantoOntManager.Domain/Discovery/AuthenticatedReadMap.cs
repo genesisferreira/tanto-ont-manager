@@ -12,7 +12,20 @@ public sealed record AuthenticatedReadMapEntry(
     int SizeBytes,
     string? SanitizedHash,
     bool WasAccessed,
-    bool IsPriority);
+    bool IsPriority)
+{
+    public AuthenticatedRouteKind RouteKind { get; init; }
+
+    public RouteConfidence Confidence { get; init; }
+
+    public string? Variable { get; init; }
+
+    public string? LiteralValue { get; init; }
+
+    public string? SanitizedSnippet { get; init; }
+
+    public string ExtraParametersText { get; init; } = string.Empty;
+}
 
 public sealed record AuthenticatedReadMap(
     IReadOnlyList<AuthenticatedReadMapEntry> Entries,
@@ -49,7 +62,7 @@ public sealed record AuthenticatedReadMap(
             "Padrões sem tag literal: " + (UnresolvedPatterns.Count == 0 ? "nenhum" : string.Join("; ", UnresolvedPatterns)),
             Note,
             string.Empty,
-            "Texto do menu | _type | _tag | Origem | Classificação | Motivo | HTTP | Content-Type | Tamanho | Hash"
+            "Texto do menu | _type | _tag | Extras | Kind | Confiança | Variável | Origem | Classificação | Motivo | HTTP | Content-Type | Tamanho | Hash | Trecho"
         };
 
         foreach (var item in Entries)
@@ -59,6 +72,10 @@ public sealed record AuthenticatedReadMap(
                 item.MenuText ?? "—",
                 item.Type,
                 item.Tag,
+                string.IsNullOrWhiteSpace(item.ExtraParametersText) ? "—" : item.ExtraParametersText,
+                item.RouteKind.ToString(),
+                item.Confidence.ToString(),
+                item.Variable ?? "—",
                 item.EvidenceSource,
                 item.Classification.ToString(),
                 item.Reason,
@@ -66,6 +83,7 @@ public sealed record AuthenticatedReadMap(
                 item.ContentType ?? "—",
                 item.SizeBytes.ToString(),
                 item.SanitizedHash ?? "—",
+                string.IsNullOrWhiteSpace(item.SanitizedSnippet) ? "—" : item.SanitizedSnippet
             }));
         }
 

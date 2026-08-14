@@ -21,18 +21,16 @@ public static class F6201BAuthenticatedReadMapper
     {
         var home = await transport.GetAsync("/", cancellationToken);
         var pages = new List<(string Page, string Body)>();
-        var unresolved = new List<string>();
+        var sources = new List<(string Page, string Body)>();
         var accessed = new Dictionary<string, SafeReadInventoryItem>(StringComparer.OrdinalIgnoreCase);
+        var templates = RouteTemplateSet.Empty;
 
         if (home.Succeeded)
         {
             pages.Add(("/", home.Body));
-            CollectUnresolved(unresolved, home.Body);
+            sources.Add(("/", home.Body));
+            templates = templates.Union(F6201BStaticRouteResolver.DetectTemplates(home.Body));
         }
-
-        var inventory = home.Succeeded
-            ? F6201BSafeReadDiscovery.Discover(home.Body, "/").ToList()
-            : [];
 
         if (home.Succeeded)
         {
@@ -51,22 +49,34 @@ public static class F6201BAuthenticatedReadMapper
                     continue;
                 }
 
-                CollectUnresolved(unresolved, js.Body);
-                var fromJs = F6201BSafeReadDiscovery.Discover(js.Body, script);
-                inventory = F6201BSafeReadDiscovery.Merge(inventory, fromJs).ToList();
+                sources.Add((script, js.Body));
+                templates = templates.Union(F6201BStaticRouteResolver.DetectTemplates(js.Body));
             }
+        }
+
+        var inventory = new List<SafeReadInventoryItem>();
+        foreach (var source in sources)
+        {
+            inventory = F6201BSafeReadDiscovery.Merge(
+                inventory,
+                F6201BSafeReadDiscovery.Discover(source.Body, source.Page, templates)).ToList();
         }
 
         Remember(transport, inventory);
 
         var pending = inventory
             .Where(item => item.Classification == SafeReadClassification.SafeRead)
+            .Where(item => item.RouteKind is not AuthenticatedRouteKind.MenuFolder
+                and not AuthenticatedRouteKind.UnresolvedDynamicRoute
+                and not AuthenticatedRouteKind.ActionEndpoint)
             .OrderBy(item => F6201BPriorityMenu.Match(item.MenuText) is null ? 1 : 0)
             .ToList();
 
+        var queued = new HashSet<string>(pending.Select(item => item.TypeAndTag), StringComparer.OrdinalIgnoreCase);
         var totalBytes = pages.Sum(item => item.Body.Length);
-        foreach (var candidate in pending)
+        for (var i = 0; i < pending.Count; i++)
         {
+            var candidate = pending[i];
             if (pages.Count >= F6201BV9310P8N1AuthContract.MaxSafeReadPages
                 || totalBytes >= F6201BV9310P8N1AuthContract.MaxTotalBodyBytes)
             {
@@ -76,8 +86,8 @@ public static class F6201BAuthenticatedReadMapper
             var parts = candidate.TypeAndTag.Split(':');
             var type = parts[0];
             var tag = parts.Length > 1 ? parts[1] : candidate.Tag;
-            transport.RememberSafeRead(type, tag);
-            var path = F6201BV9310P8N1AuthContract.BuildGetPath(type, tag);
+            transport.RememberProvenQueryParameters(type, tag, candidate.ExtraParameters);
+            var path = F6201BV9310P8N1AuthContract.BuildGetPath(type, tag, candidate.ExtraParameters);
             var page = await transport.GetAsync(path, cancellationToken);
             Log(logger, type, tag, page, candidate.Classification);
             if (!page.Succeeded)
@@ -108,15 +118,28 @@ public static class F6201BAuthenticatedReadMapper
 
             totalBytes += page.Body.Length;
             pages.Add((path, page.Body));
-            CollectUnresolved(unresolved, page.Body);
+            sources.Add((path, page.Body));
+            templates = templates.Union(F6201BStaticRouteResolver.DetectTemplates(page.Body));
             accessed[candidate.TypeAndTag] = candidate.WithAccess(page.ContentType, page.Body.Length, page.SanitizedBodySha256) with
             {
                 MenuText = candidate.MenuText,
                 HttpStatus = page.StatusCode
             };
-            var discovered = F6201BSafeReadDiscovery.Discover(page.Body, path);
+
+            var discovered = F6201BSafeReadDiscovery.Discover(page.Body, path, templates);
             inventory = F6201BSafeReadDiscovery.Merge(inventory, discovered).ToList();
             Remember(transport, discovered);
+            foreach (var item in discovered.Where(candidatePage =>
+                         candidatePage.Classification == SafeReadClassification.SafeRead
+                         && candidatePage.RouteKind is not AuthenticatedRouteKind.MenuFolder
+                             and not AuthenticatedRouteKind.UnresolvedDynamicRoute
+                             and not AuthenticatedRouteKind.ActionEndpoint))
+            {
+                if (queued.Add(item.TypeAndTag) && !accessed.ContainsKey(item.TypeAndTag))
+                {
+                    pending.Add(item);
+                }
+            }
         }
 
         var mergedInventory = inventory.Select(item =>
@@ -125,6 +148,7 @@ public static class F6201BAuthenticatedReadMapper
         var entries = mergedInventory.Select(item => ToEntry(item, accessed)).ToList();
         var found = F6201BPriorityMenu.All.Where(label => entries.Any(entry => entry.IsPriority && F6201BPriorityMenu.Match(entry.MenuText) == label)).Distinct().ToList();
         var missing = F6201BPriorityMenu.All.Except(found).ToList();
+        var unresolved = CollectUnresolved(sources, mergedInventory);
 
         var device = F6201BV9310P8N1DeviceInformationParser.Parse(pages.ToArray());
         var pon = F6201BV9310P8N1PonParser.Parse(pages.ToArray());
@@ -132,10 +156,10 @@ public static class F6201BAuthenticatedReadMapper
         var identity = MergeIdentity(current.Identity, device);
         var diagnostics = MergeDiagnostics(current.Diagnostics, pon, wan);
 
-        var note = BuildNote(found, missing, unresolved, device, pon, wan);
+        var note = BuildNote(found, missing, unresolved, entries, device, pon, wan);
         var map = new AuthenticatedReadMap(
             entries,
-            unresolved.Distinct(StringComparer.Ordinal).ToList(),
+            unresolved,
             found,
             missing,
             transport.LoginPostCount,
@@ -167,6 +191,12 @@ public static class F6201BAuthenticatedReadMapper
         var parts = resolved.TypeAndTag.Split(':');
         var type = parts.Length > 0 ? parts[0] : "menuView";
         var tag = parts.Length > 1 ? parts[1] : resolved.Tag;
+        if (string.Equals(type, "unresolved", StringComparison.OrdinalIgnoreCase))
+        {
+            type = "—";
+            tag = resolved.Variable ?? resolved.Tag;
+        }
+
         return new AuthenticatedReadMapEntry(
             resolved.MenuText ?? item.MenuText,
             type,
@@ -179,7 +209,15 @@ public static class F6201BAuthenticatedReadMapper
             resolved.SizeBytes,
             string.IsNullOrWhiteSpace(resolved.SanitizedHash) ? null : resolved.SanitizedHash,
             resolved.WasAccessed,
-            F6201BPriorityMenu.Match(resolved.MenuText ?? item.MenuText) is not null);
+            F6201BPriorityMenu.Match(resolved.MenuText ?? item.MenuText) is not null)
+        {
+            RouteKind = resolved.RouteKind,
+            Confidence = resolved.Confidence,
+            Variable = resolved.Variable,
+            LiteralValue = resolved.LiteralValue,
+            SanitizedSnippet = resolved.SanitizedSnippet,
+            ExtraParametersText = F6201BProvenQueryParameter.Format(resolved.ExtraParameters)
+        };
     }
 
     private static void Remember(IBoundOntTransport transport, IEnumerable<SafeReadInventoryItem> items)
@@ -189,20 +227,51 @@ public static class F6201BAuthenticatedReadMapper
             var parts = item.TypeAndTag.Split(':');
             if (parts.Length == 2)
             {
-                transport.RememberSafeRead(parts[0], parts[1]);
+                transport.RememberProvenQueryParameters(parts[0], parts[1], item.ExtraParameters);
             }
         }
     }
 
-    private static void CollectUnresolved(List<string> target, string body)
+    private static IReadOnlyList<string> CollectUnresolved(
+        IEnumerable<(string Page, string Body)> sources,
+        IReadOnlyList<SafeReadInventoryItem> inventory)
     {
-        foreach (var pattern in F6201BUnresolvedPatterns.Find(body))
+        var hasMenuLeaf = inventory.Any(item => item.RouteKind == AuthenticatedRouteKind.MenuLeaf
+                                                && item.Classification == SafeReadClassification.SafeRead);
+        var found = new List<string>();
+        foreach (var source in sources)
         {
-            if (!target.Contains(pattern, StringComparer.Ordinal))
+            var resolved = F6201BStaticRouteResolver.Resolve(source.Body, source.Page);
+            foreach (var reason in resolved.UnresolvedReasons)
             {
-                target.Add(pattern);
+                if (hasMenuLeaf
+                    && reason.Contains("menuView", StringComparison.OrdinalIgnoreCase)
+                    && reason.Contains("sem literal", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!found.Contains(reason, StringComparer.Ordinal))
+                {
+                    found.Add(reason);
+                }
+            }
+
+            foreach (var pattern in F6201BUnresolvedPatterns.Find(source.Body))
+            {
+                if (hasMenuLeaf && pattern.Contains("menuView", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!found.Contains(pattern, StringComparer.Ordinal))
+                {
+                    found.Add(pattern);
+                }
             }
         }
+
+        return found;
     }
 
     private static void Log(ILogger logger, string type, string tag, BoundHttpResult page, SafeReadClassification classification)
@@ -254,6 +323,7 @@ public static class F6201BAuthenticatedReadMapper
         IReadOnlyList<string> found,
         IReadOnlyList<string> missing,
         IReadOnlyList<string> unresolved,
+        IReadOnlyList<AuthenticatedReadMapEntry> entries,
         F6201BParsedDeviceInformation device,
         F6201BParsedPonStatus pon,
         F6201BParsedWanSummary wan)
@@ -269,9 +339,19 @@ public static class F6201BAuthenticatedReadMapper
             parts.Add("Telas prioritárias evidenciadas: " + string.Join("; ", found) + ".");
         }
 
+        var realLabels = entries
+            .Select(item => item.MenuText)
+            .Where(text => !string.IsNullOrWhiteSpace(text))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (missing.Count > 0 && realLabels.Count > 0)
+        {
+            parts.Add("Rótulos reais do menu: " + string.Join("; ", realLabels) + ".");
+        }
+
         if (unresolved.Count > 0)
         {
-            parts.Add("O JS descreve GET concatenado sem tag literal; o pareamento não foi inventado.");
+            parts.Add("Rotas concatenadas sem origem literal permaneceram UnresolvedDynamicRoute; o pareamento não foi inventado.");
         }
 
         var empty = string.IsNullOrWhiteSpace(device.HardwareVersion)

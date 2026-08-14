@@ -17,6 +17,18 @@ public sealed record SafeReadInventoryItem(
 
     public int? HttpStatus { get; init; }
 
+    public IReadOnlyDictionary<string, string> ExtraParameters { get; init; } = new Dictionary<string, string>();
+
+    public AuthenticatedRouteKind RouteKind { get; init; }
+
+    public RouteConfidence Confidence { get; init; }
+
+    public string? Variable { get; init; }
+
+    public string? LiteralValue { get; init; }
+
+    public string? SanitizedSnippet { get; init; }
+
     public SafeReadInventoryItem WithAccess(string? contentType, int sizeBytes, string sanitizedHash)
         => this with
         {

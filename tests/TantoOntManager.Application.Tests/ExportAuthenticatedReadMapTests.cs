@@ -70,6 +70,7 @@ public sealed class ExportAuthenticatedReadMapTests
         combined.Should().NotContain("Set-Cookie");
         combined.Should().NotContain("SID_HTTPS_=");
         combined.Should().NotContain("_sessionTOKEN=");
+        combined.Should().Contain("Kind");
         result.Value.Inspection.IncludesRawAuthenticatedHtml.Should().BeFalse();
     }
 

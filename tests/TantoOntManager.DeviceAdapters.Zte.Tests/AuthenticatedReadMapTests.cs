@@ -113,6 +113,36 @@ public sealed class AuthenticatedReadMapTests
         transport.Gets.Should().NotContain(uri => uri.Contains("status_dev_guess"));
     }
 
+    [Fact]
+    public async Task Mapper_reads_homepage_shell_then_literal_data_endpoint()
+    {
+        var transport = new MapperTransport
+        {
+            HomeHtml = Fixture("zte-f6201b-v9310p8n1-homepage-shell.html")
+        };
+        var result = await F6201BAuthenticatedReadMapper.MapAsync(transport, EmptySnapshot(), NullLogger.Instance, CancellationToken.None);
+        transport.Posts.Should().BeEmpty();
+        transport.ConfigPostCount.Should().Be(0);
+        transport.Gets.Should().Contain(uri => uri.Contains("firewall_homepage_lua"));
+        transport.Gets.Should().Contain(uri => uri.Contains("_type=menuData") && uri.Contains("devStatus"));
+        result.Map.Entries.Should().Contain(item => item.Tag == "firewall_homepage_lua" && item.RouteKind == AuthenticatedRouteKind.HomepageShell);
+        result.Map.Entries.Should().Contain(item => item.Tag == "devStatus" && item.RouteKind == AuthenticatedRouteKind.DataEndpoint);
+        result.Snapshot.Identity.Firmware.HardwareVersion.Should().Be("V9.3.12");
+    }
+
+    [Fact]
+    public async Task Mapper_respects_page_limit_and_does_not_post_config()
+    {
+        var tags = string.Join("", Enumerable.Range(1, 20).Select(i => $"<p MenuPage='page{i}'>p{i}</p>"));
+        var transport = new MapperTransport { HomeHtml = $"<html><body>{tags}</body></html>" };
+        var result = await F6201BAuthenticatedReadMapper.MapAsync(transport, EmptySnapshot(), NullLogger.Instance, CancellationToken.None);
+        result.Snapshot.PagesRead.Count.Should().BeLessThanOrEqualTo(F6201BV9310P8N1AuthContract.MaxSafeReadPages);
+        transport.Posts.Should().BeEmpty();
+        transport.ConfigPostCount.Should().Be(0);
+        transport.Gets.Should().NotContain(uri => uri.Contains("unknownGuess"));
+        transport.Gets.Distinct().Count().Should().Be(transport.Gets.Count);
+    }
+
     private static AuthenticatedReadSnapshot EmptySnapshot()
         => new(
             new DeviceIdentity(ManufacturerNames.Zte, DeviceModelIds.ZteF6201B, FirmwareInfo.Unknown, null, null),
@@ -157,6 +187,10 @@ public sealed class AuthenticatedReadMapTests
             if (pathAndQuery == "/")
             {
                 body = HomeHtml;
+            }
+            else if (pathAndQuery.Contains("firewall_homepage_lua", StringComparison.OrdinalIgnoreCase))
+            {
+                body = Fixture("zte-f6201b-v9310p8n1-homepage-shell-body.html");
             }
             else if (pathAndQuery.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
             {

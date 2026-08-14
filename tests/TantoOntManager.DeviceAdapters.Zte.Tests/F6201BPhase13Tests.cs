@@ -17,7 +17,11 @@ public sealed class F6201BSafeReadDiscoveryTests
     public void Discovers_only_explicit_tags_and_classifies_them()
     {
         var items = F6201BSafeReadDiscovery.Discover(Home());
-        items.Select(item => item.Tag).Should().Contain(new[] { "homePage", "devinfo", "ponInfo", "ethWanStatus", "sntp_data" });
+        items.Should().Contain(item => item.Tag == "sntp_data" && item.Classification == SafeReadClassification.SafeRead);
+        items.Should().Contain(item =>
+            item.Tag == "accessdev_data"
+            && item.Classification == SafeReadClassification.SafeRead
+            && item.ExtraParameters["DeveiceType"] == "PC");
         items.Should().NotContain(item => item.Tag.Equals("status_dev_guess", StringComparison.OrdinalIgnoreCase));
         items.Should().Contain(item => item.Tag == "devinfo" && item.Classification == SafeReadClassification.SafeRead);
         items.Should().Contain(item => item.Tag == "reboot" && item.Classification == SafeReadClassification.BlockedPotentialAction);
@@ -34,7 +38,17 @@ public sealed class F6201BSafeReadDiscoveryTests
         F6201BV9310P8N1AuthContract.IsAllowedGet(new Uri("https://192.168.100.1/?_type=menuView&_tag=devinfo"), ip, keys).Should().BeTrue();
         F6201BV9310P8N1AuthContract.IsAllowedGet(new Uri("https://192.168.100.1/?_type=menuView&_tag=unknownPage"), ip, keys).Should().BeFalse();
         F6201BV9310P8N1AuthContract.IsAllowedGet(new Uri("https://192.168.100.1/?_type=menuView&_tag=reboot"), ip, keys).Should().BeFalse();
-        F6201BV9310P8N1AuthContract.IsAllowedGet(new Uri("https://192.168.1.1/?_type=menuView&_tag=devinfo"), ip, keys).Should().BeFalse();
+        F6201BV9310P8N1AuthContract.IsAllowedGet(
+            new Uri("https://192.168.100.1/?_type=hiddenData&_tag=accessdev_data&DeveiceType=PC"),
+            ip,
+            new[] { "hiddenData:accessdev_data" },
+            (key, name, value) => key == "hiddenData:accessdev_data" && name == "DeveiceType" && value == "PC")
+            .Should().BeTrue();
+        F6201BV9310P8N1AuthContract.IsAllowedGet(
+            new Uri("https://192.168.100.1/?_type=hiddenData&_tag=accessdev_data&DeveiceType=PC"),
+            ip,
+            new[] { "hiddenData:accessdev_data" })
+            .Should().BeFalse();
     }
 }
 
@@ -148,11 +162,37 @@ public sealed class F6201BLogoutTests
     [Fact]
     public async Task Rejected_logout_still_discards_cookies()
     {
-        var transport = new LogoutTransport { Body = """{"need_refresh":false,"loginErrMsg":"This page has expired, please refresh and try again."}""" };
+        var transport = new LogoutTransport { StatusCode = 500 };
         var result = await F6201BV9310P8N1Logout.ExecuteAsync(transport, CancellationToken.None);
         result.RemoteInvalidationConfirmed.Should().BeFalse();
         result.Message.Should().Be("Sessão local encerrada; invalidação remota não confirmada");
         transport.HasSessionCookie.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Empty_logout_body_confirms_remote()
+    {
+        var transport = new LogoutTransport { Body = "  " };
+        var result = await F6201BV9310P8N1Logout.ExecuteAsync(transport, CancellationToken.None);
+        result.RemoteInvalidationConfirmed.Should().BeTrue();
+        result.LogoutPostCount.Should().Be(1);
+        transport.HasSessionCookie.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Zte_logout_json_without_need_refresh_true_confirms_remote()
+    {
+        var transport = new LogoutTransport { Body = """{"sess_token":"tok","need_refresh":false}""" };
+        var result = await F6201BV9310P8N1Logout.ExecuteAsync(transport, CancellationToken.None);
+        result.RemoteInvalidationConfirmed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Zte_logoff_expiry_message_after_logout_post_confirms_remote()
+    {
+        var transport = new LogoutTransport { Body = """{"need_refresh":false,"loginErrMsg":"This page has expired, please refresh and try again."}""" };
+        var result = await F6201BV9310P8N1Logout.ExecuteAsync(transport, CancellationToken.None);
+        result.RemoteInvalidationConfirmed.Should().BeTrue();
     }
 
     [Fact]
@@ -169,6 +209,7 @@ public sealed class F6201BLogoutTests
     {
         public string Body { get; set; } = "{}";
         public bool Timeout { get; set; }
+        public int StatusCode { get; set; } = 200;
         public IPAddress BoundAddress { get; } = IPAddress.Parse("192.168.100.1");
         public string? ObservedCertificateSha256 => "abc";
         public bool HasSessionCookie { get; private set; } = true;
@@ -201,7 +242,7 @@ public sealed class F6201BLogoutTests
 
             LogoutPostCount++;
             return Task.FromResult(new BoundHttpResult(
-                true, 200, Body, "application/json", "https://192.168.100.1/?_type=loginData&_tag=logout_entry",
+                true, StatusCode, Body, "application/json", "https://192.168.100.1/?_type=loginData&_tag=logout_entry",
                 0, "abcd1234", TimeSpan.FromMilliseconds(3), null));
         }
 

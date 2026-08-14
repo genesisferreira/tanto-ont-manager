@@ -51,6 +51,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
     private readonly List<string> _posts = [];
     private readonly HashSet<string> _discoveredTags = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _discoveredAssets = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Dictionary<string, string>> _provenExtras = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
     private readonly string _sessionId = Guid.NewGuid().ToString("N")[..8];
     private HttpClient? _client;
@@ -161,7 +162,11 @@ public sealed class BoundOntTransport : IBoundOntTransport
             return await SendAsync(HttpMethod.Get, uri, null, cancellationToken);
         }
 
-        if (!F6201BV9310P8N1AuthContract.IsAllowedGet(uri, BoundAddress, _discoveredTags))
+        if (!F6201BV9310P8N1AuthContract.IsAllowedGet(
+                uri,
+                BoundAddress,
+                _discoveredTags,
+                ExtraIsProven))
         {
             _logger.LogWarning("GET recusado fora da allowlist: {Path}", F6201BV9310P8N1AuthContract.MaskUri(uri));
             return BoundHttpResult.Fail(Error.Create(
@@ -239,6 +244,35 @@ public sealed class BoundOntTransport : IBoundOntTransport
         _discoveredTags.Add(F6201BV9310P8N1AuthContract.MakeKey(type, tag));
     }
 
+    public void RememberProvenQueryParameters(string type, string tag, IReadOnlyDictionary<string, string> extras)
+    {
+        RememberSafeRead(type, tag);
+        if (extras is null || extras.Count == 0)
+        {
+            return;
+        }
+
+        var key = F6201BV9310P8N1AuthContract.MakeKey(type, tag);
+        if (!_provenExtras.TryGetValue(key, out var map))
+        {
+            map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _provenExtras[key] = map;
+        }
+
+        foreach (var pair in extras)
+        {
+            if (F6201BProvenQueryParameter.TryCreate(pair.Key, pair.Value, out var name, out var value))
+            {
+                map[name] = value;
+            }
+        }
+    }
+
+    private bool ExtraIsProven(string typeAndTag, string name, string value)
+        => _provenExtras.TryGetValue(typeAndTag, out var map)
+           && map.TryGetValue(name, out var expected)
+           && expected.Equals(value, StringComparison.Ordinal);
+
     public void RememberReferencedAsset(string relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath)
@@ -259,10 +293,18 @@ public sealed class BoundOntTransport : IBoundOntTransport
     {
         foreach (var item in F6201BSafeReadDiscovery.Discover(html))
         {
-            if (item.Classification == SafeReadClassification.SafeRead)
+            if (item.Classification != SafeReadClassification.SafeRead)
             {
-                _discoveredTags.Add(item.TypeAndTag);
+                continue;
             }
+
+            var parts = item.TypeAndTag.Split(':');
+            if (parts.Length != 2)
+            {
+                continue;
+            }
+
+            RememberProvenQueryParameters(parts[0], parts[1], item.ExtraParameters);
         }
     }
 
@@ -362,7 +404,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
                             redirects + 1);
                     }
 
-                    if (!F6201BV9310P8N1AuthContract.IsAllowedGet(next, BoundAddress, _discoveredTags))
+                    if (!F6201BV9310P8N1AuthContract.IsAllowedGet(next, BoundAddress, _discoveredTags, ExtraIsProven))
                     {
                         Record(method, current, isPost: false);
                         return BoundHttpResult.Fail(
@@ -491,7 +533,7 @@ public sealed class BoundOntTransport : IBoundOntTransport
             {
                 Timeout = TimeSpan.FromSeconds(8)
             };
-            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.4 (lab-readonly)");
+            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.4.1 (lab-readonly)");
             _client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
             _httpClientInstanceId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_client);
             return _client;
