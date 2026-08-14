@@ -70,9 +70,9 @@ public static class F6201BAuthenticatedSafeReader
             {
                 Mark(inventory, key, item => item.WithClassification(
                     SafeReadClassification.UnknownNotAccessed,
-                    "Resposta parece login ou sessão expirada; a página não foi interpretada como dado interno.",
+                    "Resposta parece login ou sessão inválida; a página não foi interpretada como dado interno.",
                     false));
-                return new AuthenticatedSafeReadResult(pages, inventory, pageNames, true, totalBytes);
+                continue;
             }
 
             totalBytes += page.Body.Length;

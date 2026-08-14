@@ -37,6 +37,12 @@ public interface IBoundOntTransport : IDisposable
 
     string? SessionToken { get; }
 
+    string SessionId { get; }
+
+    int HttpClientInstanceId { get; }
+
+    int CookieCount { get; }
+
     IReadOnlyList<string> HttpMethodsUsed { get; }
 
     IReadOnlyList<string> MaskedGetPages { get; }
@@ -55,7 +61,7 @@ public interface IBoundOntTransport : IDisposable
 
     void RememberSafeRead(string type, string tag);
 
-    void ClearCookiesAndState();
+    void ClearCookiesAndState(string reason);
 }
 
 public interface IBoundOntTransportFactory

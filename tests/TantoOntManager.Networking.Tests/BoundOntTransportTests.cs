@@ -90,7 +90,7 @@ public sealed class BoundOntTransportTests
 
         await transport.GetAsync(F6201BV9310P8N1AuthContract.LoginPathAndQuery, CancellationToken.None);
         transport.HasSessionCookie.Should().BeTrue();
-        transport.ClearCookiesAndState();
+        transport.ClearCookiesAndState("test");
         transport.HasSessionCookie.Should().BeFalse();
     }
 
@@ -229,11 +229,13 @@ public sealed class BoundOntTransportTests
         public Dictionary<string, HttpResponseMessage> PostMap { get; } = new(StringComparer.OrdinalIgnoreCase);
         public List<string> Methods { get; } = [];
         public List<string> Posts { get; } = [];
+        public List<string> CookieHeaders { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Methods.Add(request.Method.Method);
+            CookieHeaders.Add(request.Headers.TryGetValues("Cookie", out var values) ? string.Join("; ", values) : string.Empty);
             var key = request.RequestUri!.ToString();
             if (request.Method == HttpMethod.Post)
             {

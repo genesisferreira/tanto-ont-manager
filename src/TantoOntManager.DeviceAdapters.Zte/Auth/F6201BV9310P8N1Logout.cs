@@ -24,7 +24,7 @@ public static class F6201BV9310P8N1Logout
         }
         catch (OperationCanceledException)
         {
-            transport.ClearCookiesAndState();
+            transport.ClearCookiesAndState("logout-timeout");
             return LogoutResult.LocalOnly(loginPosts, transport.LogoutPostCount, ErrorCodes.ProbeTimeout);
         }
         finally
@@ -32,7 +32,7 @@ public static class F6201BV9310P8N1Logout
             form["_sessionTOKEN"] = string.Empty;
         }
 
-        transport.ClearCookiesAndState();
+        transport.ClearCookiesAndState("logout");
 
         if (LooksSuccessful(response))
         {

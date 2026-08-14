@@ -98,7 +98,7 @@ public sealed class OntAuthSessionStore : IOntAuthSessionStore
     {
         lock (_gate)
         {
-            _transport?.ClearCookiesAndState();
+            _transport?.ClearCookiesAndState(reason);
             _transport?.Dispose();
             _transport = null;
             _session = null;

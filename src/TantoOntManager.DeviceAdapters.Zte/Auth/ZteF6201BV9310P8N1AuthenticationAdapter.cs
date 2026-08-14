@@ -191,12 +191,38 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                 return TransportFail(authenticatedHome, started.Elapsed, transport);
             }
 
-            if (F6201BHtmlText.LooksLikeSessionExpired(authenticatedHome.Body))
+            var pageKind = F6201BHtmlText.Classify(authenticatedHome.Body);
+            var hashChanged = !string.Equals(
+                authenticatedHome.SanitizedBodySha256,
+                home.SanitizedBodySha256,
+                StringComparison.OrdinalIgnoreCase);
+            var confirmed = transport.HasSessionCookie
+                            && pageKind != AuthenticatedPageKind.SessionExpiredEvidence
+                            && (pageKind == AuthenticatedPageKind.AuthenticatedPage || hashChanged);
+
+            _logger.LogInformation(
+                "Confirmação autenticada sessionId={SessionId} client={Client} sid={Sid} tokenPresente={Token} tokenLen={Len} kind={Kind} hashPublico={PublicHash} hashAuth={AuthHash} confirmado={Confirmed} ip={Ip} cert={Cert}",
+                transport.SessionId,
+                transport.HttpClientInstanceId,
+                transport.HasSessionCookie,
+                !string.IsNullOrEmpty(transport.SessionToken),
+                transport.SessionToken?.Length ?? 0,
+                pageKind,
+                home.SanitizedBodySha256,
+                authenticatedHome.SanitizedBodySha256,
+                confirmed,
+                endpoint.Address,
+                transport.ObservedCertificateSha256);
+
+            if (!confirmed)
             {
+                var expired = pageKind is AuthenticatedPageKind.SessionExpiredEvidence or AuthenticatedPageKind.PublicLoginPage;
                 return Fail(
-                    AuthSessionState.SessionExpired,
-                    ErrorCodes.SessionExpired,
-                    "A sessão autenticada expirou imediatamente após o login.",
+                    expired ? AuthSessionState.SessionExpired : AuthSessionState.ControlledFailure,
+                    expired ? ErrorCodes.SessionExpired : ErrorCodes.UnexpectedFailure,
+                    expired
+                        ? "A sessão autenticada não foi confirmada: o GET / após o login voltou à página pública ou a uma resposta de sessão inválida."
+                        : "A sessão autenticada não reuniu marcador positivo no GET / de confirmação.",
                     started.Elapsed,
                     transport,
                     authenticatedHome);
@@ -208,17 +234,6 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
                 "/",
                 authenticatedHome,
                 cancellationToken);
-
-            if (read.SessionExpired && read.Pages.Count <= 1)
-            {
-                return Fail(
-                    AuthSessionState.SessionExpired,
-                    ErrorCodes.SessionExpired,
-                    "A sessão autenticada expirou durante a leitura GET.",
-                    started.Elapsed,
-                    transport,
-                    authenticatedHome);
-            }
 
             var pageBodies = read.Pages.ToArray();
             var device = F6201BV9310P8N1DeviceInformationParser.Parse(pageBodies);
@@ -285,7 +300,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
         catch (OperationCanceledException)
         {
             var posts = transport.PostCount;
-            transport.ClearCookiesAndState();
+            transport.ClearCookiesAndState("timeout");
             transport.Dispose();
             return Fail(
                 AuthSessionState.ControlledFailure,
@@ -327,7 +342,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapter : IOntAuthentication
         var status = last?.StatusCode;
         var hash = last?.SanitizedBodySha256;
         var masked = last?.FinalUri is { Length: > 0 } uri ? SafeMask(uri) : null;
-        transport?.ClearCookiesAndState();
+        transport?.ClearCookiesAndState("auth-failure:" + code);
         transport?.Dispose();
         return AuthenticationResult.Failed(
             state,

@@ -38,7 +38,7 @@ public sealed class EndAuthenticatedSessionUseCase : IEndAuthenticatedSessionUse
         }
         else
         {
-            transport?.ClearCookiesAndState();
+            transport?.ClearCookiesAndState("end-without-official-logout");
             result = LogoutResult.LocalOnly(loginPosts, transport?.LogoutPostCount ?? 0);
         }
 

@@ -51,6 +51,9 @@ public sealed class BoundOntTransport : IBoundOntTransport
     private readonly List<string> _posts = [];
     private readonly HashSet<string> _discoveredTags = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
+    private readonly string _sessionId = Guid.NewGuid().ToString("N")[..8];
+    private HttpClient? _client;
+    private int _httpClientInstanceId;
     private bool _disposed;
 
     public BoundOntTransport(
@@ -94,6 +97,23 @@ public sealed class BoundOntTransport : IBoundOntTransport
     public int ConfigPostCount => 0;
 
     public string? SessionToken { get; private set; }
+
+    public string? LastCleanupReason { get; private set; }
+
+    public string SessionId => _sessionId;
+
+    public int HttpClientInstanceId => _httpClientInstanceId;
+
+    public int CookieCount
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _cookies.GetCookies(_endpoint.BaseUri).Count;
+            }
+        }
+    }
 
     public IReadOnlyList<string> HttpMethodsUsed
     {
@@ -224,8 +244,13 @@ public sealed class BoundOntTransport : IBoundOntTransport
         }
     }
 
-    public void ClearCookiesAndState()
+    public void ClearCookiesAndState(string reason)
     {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            reason = "unspecified";
+        }
+
         lock (_gate)
         {
             foreach (Cookie cookie in _cookies.GetCookies(_endpoint.BaseUri))
@@ -235,6 +260,13 @@ public sealed class BoundOntTransport : IBoundOntTransport
 
             SessionToken = null;
         }
+
+        LastCleanupReason = reason;
+        _logger.LogInformation(
+            "Sessão limpa sessionId={SessionId} motivo={Reason} cookiesRestantes={Cookies}",
+            _sessionId,
+            reason,
+            CookieCount);
     }
 
     public void Dispose()
@@ -245,7 +277,12 @@ public sealed class BoundOntTransport : IBoundOntTransport
         }
 
         _disposed = true;
-        ClearCookiesAndState();
+        _client?.Dispose();
+        _client = null;
+        if (LastCleanupReason is null)
+        {
+            ClearCookiesAndState("dispose");
+        }
     }
 
     public void DiscoverFrom(string html) => RememberDiscoveredTags(html);
@@ -259,25 +296,8 @@ public sealed class BoundOntTransport : IBoundOntTransport
         var watch = Stopwatch.StartNew();
         var current = start;
         var redirects = 0;
-        HttpMessageHandler pipeline;
-        var disposeHandler = false;
-        if (_testHandler is not null)
-        {
-            pipeline = new CookieAwareHandler(_cookies, _testHandler);
-            disposeHandler = true;
-        }
-        else
-        {
-            pipeline = CreateHandler();
-            disposeHandler = true;
-        }
-
-        using var client = new HttpClient(pipeline, disposeHandler)
-        {
-            Timeout = TimeSpan.FromSeconds(8)
-        };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.3 (lab-readonly)");
-        client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
+        var client = GetOrCreateClient();
+        var cookiesBefore = DescribeCookiesDetailed();
 
         try
         {
@@ -355,14 +375,28 @@ public sealed class BoundOntTransport : IBoundOntTransport
                 RememberDiscoveredTags(body);
                 CaptureSessionToken(body);
                 var hash = AuthenticatedPayloadSanitizer.Sha256Short(body);
+                var kind = F6201BHtmlText.Classify(body);
+                var cookiesAfter = DescribeCookiesDetailed();
                 _logger.LogInformation(
-                    "HTTP autenticado method={Method} path={Path} status={Status} redirects={Redirects} hash={Hash} posts={Posts}",
+                    "HTTP autenticado sessionId={SessionId} client={Client} method={Method} path={Path} status={Status} redirects={Redirects} hash={Hash} posts={Posts} cookiesAntes={CookiesBefore} cookiesDepois={CookiesAfter} sidPresente={Sid} sidSecure={Secure} sidHttpOnly={HttpOnly} sidPath={PathCookie} tokenPresente={Token} tokenLen={TokenLen} classificacao={Kind} marcador={Marker}",
+                    _sessionId,
+                    _httpClientInstanceId,
                     method.Method,
                     F6201BV9310P8N1AuthContract.MaskUri(current),
                     status,
                     redirects,
                     hash,
-                    PostCount);
+                    PostCount,
+                    cookiesBefore.Summary,
+                    cookiesAfter.Summary,
+                    cookiesAfter.HasSid,
+                    cookiesAfter.Secure,
+                    cookiesAfter.HttpOnly,
+                    cookiesAfter.Path,
+                    !string.IsNullOrEmpty(SessionToken),
+                    SessionToken?.Length ?? 0,
+                    kind,
+                    F6201BHtmlText.SanitizedMarker(body));
 
                 return new BoundHttpResult(
                     true,
@@ -413,6 +447,52 @@ public sealed class BoundOntTransport : IBoundOntTransport
                 watch.Elapsed);
         }
     }
+
+    private HttpClient GetOrCreateClient()
+    {
+        if (_client is not null)
+        {
+            return _client;
+        }
+
+        lock (_gate)
+        {
+            if (_client is not null)
+            {
+                return _client;
+            }
+
+            HttpMessageHandler pipeline = _testHandler is not null
+                ? new CookieAwareHandler(_cookies, _testHandler)
+                : CreateHandler();
+            _client = new HttpClient(pipeline, disposeHandler: true)
+            {
+                Timeout = TimeSpan.FromSeconds(8)
+            };
+            _client.DefaultRequestHeaders.UserAgent.ParseAdd("TantoOntManager/0.1.3.1 (lab-readonly)");
+            _client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
+            _httpClientInstanceId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_client);
+            return _client;
+        }
+    }
+
+    private CookieLog DescribeCookiesDetailed()
+    {
+        lock (_gate)
+        {
+            var cookies = _cookies.GetCookies(_endpoint.BaseUri).Cast<Cookie>().ToList();
+            var sid = cookies.FirstOrDefault(item =>
+                item.Name.StartsWith(F6201BV9310P8N1AuthContract.SessionCookieNamePrefix, StringComparison.OrdinalIgnoreCase));
+            return new CookieLog(
+                cookies.Count + ":" + string.Join(",", cookies.Select(item => item.Name)),
+                sid is not null,
+                sid?.Secure,
+                sid?.HttpOnly,
+                sid?.Path);
+        }
+    }
+
+    private sealed record CookieLog(string Summary, bool HasSid, bool? Secure, bool? HttpOnly, string? Path);
 
     private HttpMessageHandler CreateHandler()
     {
@@ -544,6 +624,7 @@ internal sealed class CookieAwareHandler : DelegatingHandler
 
     protected override void Dispose(bool disposing)
     {
+        _ = disposing;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(

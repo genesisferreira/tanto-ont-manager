@@ -81,6 +81,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         transport.Posts.Should().HaveCount(1);
         store.Transport!.HasSessionCookie.Should().BeTrue();
         result.PagesRead.Should().NotBeEmpty();
+        transport.LastCleanupReason.Should().BeNull();
     }
 
     [Fact]
@@ -242,7 +243,7 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
 
         public void End(string reason)
         {
-            Transport?.ClearCookiesAndState();
+            Transport?.ClearCookiesAndState(reason);
             Transport?.Dispose();
             Transport = null;
             DomainSession = null;
@@ -277,6 +278,10 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         public int LogoutPostCount => Posts.Count(item => item.Contains("logout_entry"));
         public int ConfigPostCount => 0;
         public string? SessionToken { get; private set; } = "tok";
+        public string SessionId => "testsess";
+        public int HttpClientInstanceId => 7;
+        public int CookieCount => _cookie ? 1 : 0;
+        public string? LastCleanupReason { get; private set; }
         public IReadOnlyList<string> HttpMethodsUsed => Gets.Select(_ => "GET").Concat(Posts.Select(_ => "POST")).ToList();
         public IReadOnlyList<string> MaskedGetPages => Gets;
         public IReadOnlyList<string> MaskedPosts => Posts;
@@ -352,13 +357,14 @@ public sealed class ZteF6201BV9310P8N1AuthenticationAdapterTests
         {
         }
 
-        public void ClearCookiesAndState()
+        public void ClearCookiesAndState(string reason)
         {
+            LastCleanupReason = reason;
             _cookie = false;
             SessionToken = null;
         }
 
-        public void Dispose() => ClearCookiesAndState();
+        public void Dispose() => ClearCookiesAndState("dispose");
 
         private static BoundHttpResult Ok(string body, string uri)
         {

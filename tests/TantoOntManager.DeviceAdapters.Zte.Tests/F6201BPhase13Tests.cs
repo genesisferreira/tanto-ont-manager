@@ -177,6 +177,10 @@ public sealed class F6201BLogoutTests
         public int LogoutPostCount { get; private set; }
         public int ConfigPostCount => 0;
         public string? SessionToken { get; private set; } = "tok2";
+        public string SessionId => "logout";
+        public int HttpClientInstanceId => 1;
+        public int CookieCount => HasSessionCookie ? 1 : 0;
+        public string? LastCleanupReason { get; private set; }
         public IReadOnlyList<string> HttpMethodsUsed => ["POST"];
         public IReadOnlyList<string> MaskedGetPages => [];
         public IReadOnlyList<string> MaskedPosts => [];
@@ -205,13 +209,14 @@ public sealed class F6201BLogoutTests
         {
         }
 
-        public void ClearCookiesAndState()
+        public void ClearCookiesAndState(string reason)
         {
+            LastCleanupReason = reason;
             HasSessionCookie = false;
             SessionToken = null;
         }
 
-        public void Dispose() => ClearCookiesAndState();
+        public void Dispose() => ClearCookiesAndState("dispose");
     }
 }
 
@@ -231,7 +236,7 @@ public sealed class F6201BAuthenticatedSafeReaderTests
     }
 
     [Fact]
-    public async Task Stops_on_session_expired_internal_page()
+    public async Task Partial_login_like_page_keeps_session()
     {
         var home = "<p MenuPage='devinfo'>Device</p>";
         var transport = new ReaderTransport()
@@ -240,8 +245,10 @@ public sealed class F6201BAuthenticatedSafeReaderTests
         };
         var homeResult = new BoundHttpResult(true, 200, home, "text/html", "https://192.168.100.1/", 0, "homehash", TimeSpan.Zero, null);
         var result = await F6201BAuthenticatedSafeReader.ReadAsync(transport, home, "/", homeResult, CancellationToken.None);
-        result.SessionExpired.Should().BeTrue();
+        result.SessionExpired.Should().BeFalse();
         result.Pages.Should().HaveCount(1);
+        result.Inventory.Should().Contain(item =>
+            item.Classification == SafeReadClassification.UnknownNotAccessed);
     }
 
     private sealed class ReaderTransport : IBoundOntTransport
@@ -256,6 +263,10 @@ public sealed class F6201BAuthenticatedSafeReaderTests
         public int LogoutPostCount => 0;
         public int ConfigPostCount => 0;
         public string? SessionToken => "tok";
+        public string SessionId => "reader";
+        public int HttpClientInstanceId => 1;
+        public int CookieCount => 1;
+        public string? LastCleanupReason { get; }
         public IReadOnlyList<string> HttpMethodsUsed => Gets.Select(_ => "GET").ToList();
         public IReadOnlyList<string> MaskedGetPages => Gets;
         public IReadOnlyList<string> MaskedPosts => [];
@@ -278,7 +289,7 @@ public sealed class F6201BAuthenticatedSafeReaderTests
         {
         }
 
-        public void ClearCookiesAndState()
+        public void ClearCookiesAndState(string reason)
         {
         }
 
