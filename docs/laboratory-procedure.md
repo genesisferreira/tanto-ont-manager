@@ -41,7 +41,7 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 10. Após o login, o aplicativo lê automaticamente Device, PON, WAN Status e WAN Config por GET homologado. Confira as abas Dispositivo, PON e WAN. Use `Exportar diagnóstico autenticado` e confira a inspeção do ZIP.
 11. Clique em `Encerrar sessão` ao terminar. O aplicativo envia no máximo um POST de logout oficial e descarta os cookies.
 
-## Observação passiva de GETs (fallback 0.1.7.2-lab)
+## Observação passiva de GETs (fallback 0.1.8-lab)
 
 1. A leitura cotidiana **não** depende do WebView2. O observador permanece só como ferramenta de laboratório e fallback.
 2. Com a F6201B autenticada em modo laboratório, clique em `Observar navegação GET` e confirme.
@@ -51,6 +51,21 @@ O aplicativo **não** aplica essa configuração. Ajuste a placa manualmente, se
 6. `Exportar observação sanitizada` e inspecione IncludesCookies/Credentials/Tokens/RawAuthenticatedBody = false.
 7. `Promover contrato de leitura` gera só um JSON local em `diagnostics/proposals`; o adaptador F6201B não muda.
 8. Feche o observador: a pasta WebView2 e os cookies temporários são destruídos.
+
+## Mapeamento bloqueado WAN/PPPoE (Fase 2A)
+
+Esta fase **não configura** a ONT. `ConfigurationRequestsSent` permanece 0.
+
+1. Detecte a F6201B, autentique pelo fluxo homologado e confirme a firmware `V9.3.10P8N1`.
+2. Abra `Observar navegação GET` e confirme o WebView2 isolado.
+3. Navegue **manualmente** até Internet → WAN, escolha o perfil e, se necessário, preencha dados fictícios de laboratório.
+4. Digite exatamente `MAPEAR F6201B` (sem variação de maiúsculas ou espaços) e clique em `Iniciar captura bloqueada`.
+5. Firmware Unconfirmed recusa a captura e mantém somente leitura. Firmware incompatível recusa a captura e encerra a sessão autenticada.
+6. Clique **manualmente** em Apply/Save na interface oficial. O aplicativo intercepta no `WebResourceRequested` **antes da rede**, registra só a estrutura sanitizada e bloqueia o envio.
+7. A captura termina no primeiro candidato. Para outra tentativa, feche o observador e abra uma nova sessão.
+8. `Exportar proposta sanitizada` grava em `%LocalAppData%\TantoTelecom\TantoOntManager\diagnostics\proposals\write-contract\`.
+9. `Promover contrato de gravação` salva só um JSON local `CandidateOnly`. Não altera o adaptador F6201B nem a allowlist de escrita (continua vazia).
+10. A Fase 2B só pode começar depois de captura real bloqueada, revisão humana, backup, rollback e autorização separada.
 
 ## Resultado esperado nesta fase
 

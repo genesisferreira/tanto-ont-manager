@@ -37,6 +37,8 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IExportAuthenticatedReadMapUseCase _exportReadMap;
     private readonly IExportObservationUseCase _exportObservation;
     private readonly IPromoteReadContractUseCase _promoteContract;
+    private readonly IExportWriteContractUseCase _exportWriteContract;
+    private readonly IPromoteWriteContractUseCase _promoteWriteContract;
     private readonly IAuthenticateDeviceUseCase _authenticate;
     private readonly IEndAuthenticatedSessionUseCase _endSession;
     private readonly IOntAuthSessionStore _authSession;
@@ -110,6 +112,8 @@ public sealed class MainViewModel : ViewModelBase
         IExportAuthenticatedReadMapUseCase exportReadMap,
         IExportObservationUseCase exportObservation,
         IPromoteReadContractUseCase promoteContract,
+        IExportWriteContractUseCase exportWriteContract,
+        IPromoteWriteContractUseCase promoteWriteContract,
         IAuthenticateDeviceUseCase authenticate,
         IEndAuthenticatedSessionUseCase endSession,
         IOntAuthSessionStore authSession,
@@ -126,6 +130,8 @@ public sealed class MainViewModel : ViewModelBase
         _exportReadMap = exportReadMap;
         _exportObservation = exportObservation;
         _promoteContract = promoteContract;
+        _exportWriteContract = exportWriteContract;
+        _promoteWriteContract = promoteWriteContract;
         _authenticate = authenticate;
         _endSession = endSession;
         _authSession = authSession;
@@ -147,6 +153,7 @@ public sealed class MainViewModel : ViewModelBase
         ObserveNavigationCommand = new RelayCommand(ObserveNavigationAsync, CanObserve);
         ExportObservationCommand = new RelayCommand(ExportObservationAsync, CanExportObservation);
         PromoteContractCommand = new RelayCommand(PromoteContractAsync, CanPromoteContract);
+        PromoteWriteContractCommand = new RelayCommand(PromoteWriteContractAsync, CanPromoteWriteContract);
         LoadAdapters();
     }
 
@@ -168,6 +175,7 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand ObserveNavigationCommand { get; }
     public ICommand ExportObservationCommand { get; }
     public ICommand PromoteContractCommand { get; }
+    public ICommand PromoteWriteContractCommand { get; }
 
     public string ProductName => "Tanto ONT Manager";
     public string ModeLabel => OperationMode.LaboratoryReadOnly.ToUiLabel();
@@ -833,6 +841,9 @@ public sealed class MainViewModel : ViewModelBase
     private bool CanPromoteContract()
         => CanExportObservation();
 
+    private bool CanPromoteWriteContract()
+        => !IsBusy && (_observation.Engine?.WriteCandidate is not null || _observation.LastSnapshot?.WriteCandidate is not null);
+
     private Task ObserveNavigationAsync()
     {
         if (!CanObserve() || _authSession.Transport is null || _authSession.DomainSession is null)
@@ -844,11 +855,17 @@ public sealed class MainViewModel : ViewModelBase
         var folder = Path.Combine(_loggingPaths.RootDirectory, "observer-webview", Guid.NewGuid().ToString("N"));
         var engine = new ObservationEngine(_authSession.Transport.BoundAddress);
         _observation.Attach(engine, folder);
+        var snapshot = _authSession.Snapshot;
         var request = new ObservationLaunchRequest(
             _authSession.Transport.BoundAddress,
             _authSession.DomainSession.Endpoint.BaseUri,
             _authSession.Transport.CopyCookiesForIsolatedObserver(),
-            folder);
+            folder,
+            snapshot?.Identity.Manufacturer,
+            snapshot?.Identity.Model,
+            snapshot?.FirmwareCompatibility ?? FirmwareCompatibility.Unconfirmed,
+            snapshot?.Identity.Firmware.SoftwareVersion,
+            _authSession.DomainSession.IsAuthenticated);
         ObservationWindowRequested?.Invoke(this, request);
         ObservationText = "Observador GET aberto. Navegue manualmente nas telas Device/PON/WAN. POST permanece bloqueado.";
         LastOperation = "Observar navegação GET iniciado em WebView2 isolado.";
@@ -891,6 +908,23 @@ public sealed class MainViewModel : ViewModelBase
         });
     }
 
+    private async Task PromoteWriteContractAsync()
+    {
+        await RunBusyAsync("Promover contrato de gravação", async () =>
+        {
+            var result = await _promoteWriteContract.ExecuteAsync(_cts.Token);
+            if (result.IsFailure || result.Value is null)
+            {
+                LastOperation = result.Error?.Message ?? "Falha ao gravar a proposta de gravação.";
+                return;
+            }
+
+            ExportPath = result.Value;
+            LastOperation = "Proposta CandidateOnly gravada sem alterar o adaptador nem a allowlist: " + result.Value;
+            Recommendations = "Status CandidateOnly. NetworkRequestSent=false. Fase 2B exige revisão humana, backup e rollback.";
+        });
+    }
+
     private void StopObservation(string reason)
     {
         if (_observation.IsOpen || _observation.Engine is not null)
@@ -905,6 +939,10 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     public IObservationSessionStore ObservationSession => _observation;
+
+    public IExportWriteContractUseCase ExportWriteContract => _exportWriteContract;
+
+    public IPromoteWriteContractUseCase PromoteWriteContract => _promoteWriteContract;
 
     public void DeclineObservation() => StopObservation("não confirmado");
 
@@ -928,6 +966,13 @@ public sealed class MainViewModel : ViewModelBase
         RaiseCanExecute();
     }
 
+    public void HandleWriteCaptureIncompatible(string message)
+    {
+        LastOperation = message;
+        ObservationText = message;
+        _ = EndSessionAsync();
+    }
+
     public void RefreshObservationPanel()
     {
         if (_observationFailureMessage is not null)
@@ -948,11 +993,12 @@ public sealed class MainViewModel : ViewModelBase
 
         var counters = snapshot.Counters;
         ObservationCounters =
-            $"GET observados: {counters.GetsObserved}{Environment.NewLine}" +
-            $"GET permitidos: {counters.GetsAllowed}{Environment.NewLine}" +
-            $"Requisições bloqueadas: {counters.RequestsBlocked}{Environment.NewLine}" +
-            $"POST observados e bloqueados: {counters.PostsObservedAndBlocked}{Environment.NewLine}" +
-            "POST de configuração enviados: 0";
+            WriteContractProposalBuilder.OperatorCounters(counters, snapshot.WriteCandidate)
+            + Environment.NewLine
+            + $"GET observados: {counters.GetsObserved}{Environment.NewLine}"
+            + $"GET permitidos: {counters.GetsAllowed}{Environment.NewLine}"
+            + $"Requisições bloqueadas: {counters.RequestsBlocked}{Environment.NewLine}"
+            + $"POST observados e bloqueados: {counters.PostsObservedAndBlocked}";
         ObservationText = snapshot.SummaryText;
     }
 
@@ -991,6 +1037,7 @@ public sealed class MainViewModel : ViewModelBase
         (ObserveNavigationCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (ExportObservationCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PromoteContractCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (PromoteWriteContractCommand as RelayCommand)?.RaiseCanExecuteChanged();
         RaisePropertyChanged(nameof(IsAuthenticationMapped));
         RaisePropertyChanged(nameof(IsAuthenticated));
     }

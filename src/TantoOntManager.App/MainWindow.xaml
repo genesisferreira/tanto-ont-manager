@@ -258,7 +258,8 @@
               <Button Content="Exportar diagnóstico autenticado" Command="{Binding ExportAuthenticatedCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
               <Button Content="Exportar mapa sanitizado" Command="{Binding ExportReadMapCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
               <Button Content="Exportar observação sanitizada" Command="{Binding ExportObservationCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
-              <Button Content="Promover contrato de leitura" Command="{Binding PromoteContractCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" />
+              <Button Content="Promover contrato de leitura" Command="{Binding PromoteContractCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+              <Button Content="Promover contrato de gravação" Command="{Binding PromoteWriteContractCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" />
               <TextBlock Text="{Binding ExportPath}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8" />
               <TextBlock Text="Inspeção do ZIP autenticado" Foreground="{StaticResource MutedBrush}" FontSize="11" />
               <TextBlock Text="{Binding ZipInspection}" TextWrapping="Wrap" Margin="0,0,0,12" FontFamily="Consolas" />

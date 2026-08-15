@@ -47,4 +47,11 @@ public static class ErrorCodes
     public const string ObservationExportRequiresCapture = "OBS.EXPORT_REQUIRES_CAPTURE";
     public const string ObservationWebView2RuntimeNotFound = "OBS.WEBVIEW2_RUNTIME_NOT_FOUND";
     public const string ObservationInitializationFailed = "OBS.INITIALIZATION_FAILED";
+    public const string WriteCaptureConfirmationRejected = "WRITE.CONFIRMATION_REJECTED";
+    public const string WriteCaptureFirmwareUnconfirmed = "WRITE.FIRMWARE_UNCONFIRMED";
+    public const string WriteCaptureFirmwareIncompatible = "WRITE.FIRMWARE_INCOMPATIBLE";
+    public const string WriteCaptureModelRejected = "WRITE.MODEL_REJECTED";
+    public const string WriteCaptureAlreadyUsed = "WRITE.ALREADY_USED";
+    public const string WriteCaptureNotCaptured = "WRITE.NOT_CAPTURED";
+    public const string WriteCaptureExportInspectionFailed = "WRITE.EXPORT_INSPECTION_FAILED";
 }

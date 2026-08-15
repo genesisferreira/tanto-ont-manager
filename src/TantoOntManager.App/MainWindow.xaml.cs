@@ -34,7 +34,9 @@ public partial class MainWindow : Window
             this,
             "Abrir o WebView2 isolado para observar GET/HEAD da interface oficial da ONT?"
             + Environment.NewLine + Environment.NewLine
-            + "Somente GET/HEAD no IP selecionado. POST, PUT, PATCH, DELETE, Apply/Save e outros hosts serão bloqueados."
+            + "Somente GET/HEAD no IP selecionado. POST, PUT, PATCH, DELETE, Apply/Save e outros hosts serão bloqueados antes da rede."
+            + Environment.NewLine
+            + "A captura de gravação WAN/PPPoE, se iniciada, intercepta o primeiro candidato e cancela o envio."
             + Environment.NewLine
             + "Navegue manualmente: Management & Diagnosis → Status; Internet → PON Information; Internet → Status → WAN; Internet → WAN."
             + Environment.NewLine
@@ -55,8 +57,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        _observationWindow = new ObservationWindow(store.Engine, store, request) { Owner = this };
+        _observationWindow = new ObservationWindow(
+            store.Engine,
+            store,
+            request,
+            viewModel.ExportWriteContract,
+            viewModel.PromoteWriteContract) { Owner = this };
         _observationWindow.InitializationFailed += (_, result) => viewModel.ReportObserverInitializationFailure(result);
+        _observationWindow.WriteCaptureIncompatible += (_, message) => viewModel.HandleWriteCaptureIncompatible(message);
         _observationWindow.Closed += (_, _) =>
         {
             _observationWindow = null;

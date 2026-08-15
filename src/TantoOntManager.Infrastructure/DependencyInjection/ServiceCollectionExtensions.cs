@@ -74,6 +74,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IObservationSessionStore, ObservationSessionStore>();
         services.AddSingleton<IExportObservationUseCase, ExportObservationUseCase>();
         services.AddSingleton<IPromoteReadContractUseCase, PromoteReadContractUseCase>();
+        services.AddSingleton<IExportWriteContractUseCase, ExportWriteContractUseCase>();
+        services.AddSingleton<IPromoteWriteContractUseCase, PromoteWriteContractUseCase>();
         services.AddSingleton<IBatchProcessingOrchestrator, DisabledBatchProcessingOrchestrator>();
         services.AddSingleton<IBatchWorkOrderReader, UnsupportedBatchWorkOrderReader>();
         services.AddSingleton(paths);
@@ -87,6 +89,9 @@ public sealed record LoggingPaths(string RootDirectory)
     public string LogDirectory => Path.Combine(RootDirectory, "logs");
 
     public string DiagnosticsDirectory => Path.Combine(RootDirectory, "diagnostics");
+
+    public string WriteContractProposalsDirectory
+        => Path.Combine(DiagnosticsDirectory, "proposals", "write-contract");
 
     public string CurrentHint => Path.Combine(LogDirectory, "tanto-ont-manager-.log");
 }

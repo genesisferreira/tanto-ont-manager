@@ -84,7 +84,10 @@ public sealed record ObservationCounters(
     int GetsAllowed,
     int RequestsBlocked,
     int PostsObservedAndBlocked,
-    int ConfigurationPostsSent)
+    int ConfigurationPostsSent,
+    int ConfigurationRequestsBlocked = 0,
+    int WriteCandidatesIntercepted = 0,
+    string WriteCaptureState = "Idle")
 {
     public static ObservationCounters Zero { get; } = new(0, 0, 0, 0, 0);
 }
@@ -122,15 +125,25 @@ public sealed record ObservationZipInspection(
     bool IncludesRawAuthenticatedBody,
     bool SensitiveIdentifiersMasked,
     int ConfigurationRequestsSent,
-    IReadOnlyList<string> EntryNames)
+    IReadOnlyList<string> EntryNames,
+    bool IncludesRawRequestBody = false,
+    bool IncludesAuthorizationHeaders = false,
+    bool IncludesFullHeaders = false,
+    bool RequestBlockedBeforeNetwork = true,
+    bool IncludesRawAuthenticatedHtml = false)
 {
     public bool IsAcceptable
         => !IncludesCookies
            && !IncludesCredentials
            && !IncludesTokens
            && !IncludesRawAuthenticatedBody
+           && !IncludesRawRequestBody
+           && !IncludesAuthorizationHeaders
+           && !IncludesFullHeaders
+           && !IncludesRawAuthenticatedHtml
            && SensitiveIdentifiersMasked
-           && ConfigurationRequestsSent == 0;
+           && ConfigurationRequestsSent == 0
+           && RequestBlockedBeforeNetwork;
 
     public string ToOperatorText()
         => string.Join(Environment.NewLine, new[]
@@ -140,11 +153,21 @@ public sealed record ObservationZipInspection(
             $"IncludesTokens: {IncludesTokens.ToString().ToLowerInvariant()}",
             $"IncludesRawAuthenticatedBody: {IncludesRawAuthenticatedBody.ToString().ToLowerInvariant()}",
             $"SensitiveIdentifiersMasked: {SensitiveIdentifiersMasked.ToString().ToLowerInvariant()}",
-            $"ConfigurationRequestsSent: {ConfigurationRequestsSent}"
+            $"ConfigurationRequestsSent: {ConfigurationRequestsSent}",
+            $"IncludesRawRequestBody: {IncludesRawRequestBody.ToString().ToLowerInvariant()}",
+            $"IncludesAuthorizationHeaders: {IncludesAuthorizationHeaders.ToString().ToLowerInvariant()}",
+            $"IncludesFullHeaders: {IncludesFullHeaders.ToString().ToLowerInvariant()}",
+            $"RequestBlockedBeforeNetwork: {RequestBlockedBeforeNetwork.ToString().ToLowerInvariant()}",
+            $"IncludesRawAuthenticatedHtml: {IncludesRawAuthenticatedHtml.ToString().ToLowerInvariant()}"
         });
 }
 
 public sealed record ObservationExportResult(string ZipPath, ObservationZipInspection Inspection);
+
+public sealed record WriteContractExportResult(
+    string DirectoryPath,
+    string ZipPath,
+    ObservationZipInspection Inspection);
 
 public sealed record ObservationSnapshot(
     System.Net.IPAddress BoundAddress,
@@ -153,7 +176,9 @@ public sealed record ObservationSnapshot(
     IReadOnlyList<BlockedRequestRecord> Blocked,
     IReadOnlyList<ResponseStructure> Structures,
     string TableText,
-    string SummaryText);
+    string SummaryText,
+    WriteContractCandidate? WriteCandidate = null,
+    string WriteCaptureState = "Idle");
 
 public static class ObservationScreens
 {

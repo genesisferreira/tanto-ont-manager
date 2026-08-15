@@ -31,3 +31,13 @@ public interface IPromoteReadContractUseCase
 {
     Task<Result<string>> ExecuteAsync(CancellationToken cancellationToken);
 }
+
+public interface IExportWriteContractUseCase
+{
+    Task<Result<WriteContractExportResult>> ExecuteAsync(CancellationToken cancellationToken);
+}
+
+public interface IPromoteWriteContractUseCase
+{
+    Task<Result<string>> ExecuteAsync(CancellationToken cancellationToken);
+}

@@ -2,12 +2,12 @@
 
 Ferramenta interna da **Tanto Telecom** para identificação, diagnóstico e, no futuro, padronização de ONTs conectadas ao computador por cabo de rede.
 
-A Fase 1 é **somente leitura**. A versão `0.1.7.2-lab` lê automaticamente Device, PON, WAN Status e WAN Config da F6201B V9.3.10P8N1 após o login homologado, usando somente GETs observados (`menuView` imediatamente antes de `menuData`) e aliases XML lua desta firmware. Não altera WAN, PPPoE, VLAN, firmware nem a placa Ethernet.
+A Fase 1 é **somente leitura**. A versão `0.1.8-lab` lê automaticamente Device, PON, WAN Status e WAN Config da F6201B V9.3.10P8N1 após o login homologado, usando somente GETs observados (`menuView` imediatamente antes de `menuData`) e aliases XML lua desta firmware. A Fase 2A permite mapear o contrato de gravação WAN/PPPoE no WebView2 isolado, interceptando e **bloqueando** o primeiro POST/PUT/PATCH/DELETE candidato **antes da rede**. Não altera WAN, PPPoE, VLAN, firmware nem a placa Ethernet.
 
 ## Status da Fase 1
 
 - Modo de operação: `Laboratório — somente leitura`
-- Versão: `0.1.7.2-lab`
+- Versão: `0.1.8-lab`
 - Processamento: uma ONT por vez
 - Modelos iniciais previstos: ZTE ZXHN F6201B, F6600P, F670L
 - Detector público: F6201B por pontuação de evidências (título, Welcome to F6201B, ZTE Corporation, rodapé)
@@ -53,6 +53,7 @@ Diagnósticos públicos:
 - Exporta ZIP sanitizado da página pública
 - Login da F6201B V9.3.10P8N1: um POST no endpoint observado, cookies só em memória
 - Observação passiva dos GETs dinâmicos em WebView2 isolado (`Observar navegação GET`)
+- Mapeamento bloqueado do contrato de gravação WAN/PPPoE (Fase 2A): captura um candidato, sanitiza e cancela o envio
 - Leitura autenticada GET por tags evidenciadas e classificadas SafeRead
 - Encerrar sessão envia no máximo um POST de logout oficial e descarta cookies
 - Exporta diagnóstico autenticado sanitizado, com inspeção do ZIP
@@ -65,6 +66,7 @@ Diagnósticos públicos:
 - Não ativa Telnet/SSH
 - Não varre a rede
 - Não desabilita a validação TLS do Windows
+- Não declara o contrato de escrita como homologado
 - Não declara suporte a configuração PPPoE
 
 ## Arquitetura

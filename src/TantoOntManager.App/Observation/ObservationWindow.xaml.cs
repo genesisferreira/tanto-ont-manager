@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using TantoOntManager.Application.Contracts;
+using TantoOntManager.Domain.Common;
 using TantoOntManager.Domain.Observation;
 
 namespace TantoOntManager.App.Observation;
@@ -13,24 +14,35 @@ public partial class ObservationWindow : Window
     private readonly ObservationEngine _engine;
     private readonly IObservationSessionStore _store;
     private readonly ObservationLaunchRequest _request;
+    private readonly IExportWriteContractUseCase _exportWrite;
+    private readonly IPromoteWriteContractUseCase _promoteWrite;
     private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly HashSet<string> _allowedRequests = new(StringComparer.OrdinalIgnoreCase);
     private readonly ObserverStartupState _startup = new();
     private bool _closing;
     private bool _failed;
 
-    public ObservationWindow(ObservationEngine engine, IObservationSessionStore store, ObservationLaunchRequest request)
+    public ObservationWindow(
+        ObservationEngine engine,
+        IObservationSessionStore store,
+        ObservationLaunchRequest request,
+        IExportWriteContractUseCase exportWrite,
+        IPromoteWriteContractUseCase promoteWrite)
     {
         InitializeComponent();
         _engine = engine;
         _store = store;
         _request = request;
+        _exportWrite = exportWrite;
+        _promoteWrite = promoteWrite;
         Closed += (_, _) => Cleanup();
         _refresh.Tick += (_, _) => RefreshPanel();
         Loaded += OnLoaded;
     }
 
     public event EventHandler<ObserverInitializationResult>? InitializationFailed;
+
+    public event EventHandler<string>? WriteCaptureIncompatible;
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -98,12 +110,7 @@ public partial class ObservationWindow : Window
                 {
                     args.Cancel = true;
                     _engine.EndBecauseIpChanged();
-                    return;
-                }
-
-                if (ObservationRequestGate.HasActionToken(uri))
-                {
-                    args.Cancel = true;
+                    RequestCloseObserverOnly();
                 }
             };
             core.ServerCertificateErrorDetected += (_, args) =>
@@ -128,7 +135,7 @@ public partial class ObservationWindow : Window
             _refresh.Start();
             StatusText.Text = _request.Cookies.Count == 0
                 ? "WebView2 isolado sem cookie transferível. POST permanece bloqueado. Navegue só se a sessão já autenticada carregar."
-                : "Sessão isolada com cookies em memória. Navegue manualmente: Status, PON Information, WAN Status e WAN.";
+                : "Sessão isolada com cookies em memória. Navegue manualmente até Internet → WAN. POST de configuração permanece bloqueado.";
             core.Navigate(_request.StartUri.ToString());
             RefreshPanel();
         }
@@ -203,19 +210,95 @@ public partial class ObservationWindow : Window
                 return;
             }
 
-            var decision = _engine.Evaluate(new IncomingObservationRequest(args.Request.Method, uri));
+            var method = args.Request.Method;
+            if (WriteCandidateClassifier.IsMutatingMethod(method))
+            {
+                var deferral = args.GetDeferral();
+                _ = InspectMutatingAndBlockAsync(args, uri, method, deferral);
+                return;
+            }
+
+            var decision = _engine.Evaluate(new IncomingObservationRequest(method, uri));
             if (decision.Allowed)
             {
-                _allowedRequests.Add(ObservationUrl.Normalize(uri) + "|" + args.Request.Method);
+                _allowedRequests.Add(ObservationUrl.Normalize(uri) + "|" + method);
                 return;
             }
 
             args.Response = CreateBlockedResponse();
+            if (decision.EndsObservation && _engine.EndedByIpChange)
+            {
+                RequestCloseObserverOnly();
+            }
+
             Dispatcher.Invoke(RefreshPanel);
         }
         catch (Exception)
         {
             args.Response = CreateBlockedResponse();
+        }
+    }
+
+    private async Task InspectMutatingAndBlockAsync(
+        CoreWebView2WebResourceRequestedEventArgs args,
+        Uri uri,
+        string method,
+        CoreWebView2Deferral deferral)
+    {
+        string? body = null;
+        try
+        {
+            body = await ReadRequestBodyAsync(args.Request.Content);
+            var contentType = ReadRawHeader(args.Request.Headers, "Content-Type");
+            var referer = ReadRawHeader(args.Request.Headers, "Referer");
+            var payload = WriteBodyInspector.ToPayload(contentType, body, referer, null, null);
+            body = null;
+            var decision = _engine.Evaluate(new IncomingObservationRequest(method, uri), payload);
+            args.Response = CreateBlockedResponse();
+            if (decision.EndsObservation && _engine.EndedByIpChange)
+            {
+                await Dispatcher.InvokeAsync(RequestCloseObserverOnly);
+            }
+            else
+            {
+                await Dispatcher.InvokeAsync(RefreshPanel);
+            }
+        }
+        catch (Exception)
+        {
+            try
+            {
+                args.Response = CreateBlockedResponse();
+            }
+            catch (Exception)
+            {
+                // CoreWebView2 já encerrado
+            }
+        }
+        finally
+        {
+            body = null;
+            deferral.Complete();
+        }
+    }
+
+    private static async Task<string?> ReadRequestBodyAsync(Stream? stream)
+    {
+        if (stream is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: true);
+            var buffer = new char[65536];
+            var read = await reader.ReadAsync(buffer, 0, buffer.Length);
+            return read <= 0 ? string.Empty : new string(buffer, 0, read);
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 
@@ -333,6 +416,18 @@ public partial class ObservationWindow : Window
         }
     }
 
+    private static string? ReadRawHeader(CoreWebView2HttpRequestHeaders headers, string name)
+    {
+        try
+        {
+            return headers.Contains(name) ? headers.GetHeader(name) : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static string? TryHeader(CoreWebView2HttpRequestHeaders headers, string name)
         => ReadHeader(headers.Contains(name), () => headers.GetHeader(name));
 
@@ -379,6 +474,52 @@ public partial class ObservationWindow : Window
         RefreshPanel();
     }
 
+    private void OnStartWriteCapture(object sender, RoutedEventArgs e)
+    {
+        var result = _engine.StartBlockedWriteCapture(_request.WriteEligibility(ConfirmationBox.Text));
+        if (result.IsFailure)
+        {
+            StatusText.Text = result.Error?.Message ?? "A captura bloqueada foi recusada.";
+            if (result.Error?.Code == ErrorCodes.WriteCaptureFirmwareIncompatible)
+            {
+                WriteCaptureIncompatible?.Invoke(this, StatusText.Text);
+            }
+
+            RefreshPanel();
+            return;
+        }
+
+        StatusText.Text = "Captura bloqueada iniciada. Preencha a tela oficial e clique em Apply/Save. Nada será enviado à ONT.";
+        RefreshPanel();
+    }
+
+    private void OnCancelWriteCapture(object sender, RoutedEventArgs e)
+    {
+        _engine.CancelWriteCapture();
+        StatusText.Text = "Captura de gravação cancelada. POST continua bloqueado.";
+        RefreshPanel();
+    }
+
+    private async void OnExportWriteContract(object sender, RoutedEventArgs e)
+    {
+        var result = await _exportWrite.ExecuteAsync(CancellationToken.None);
+        StatusText.Text = result.IsFailure
+            ? result.Error?.Message ?? "Falha ao exportar a proposta sanitizada."
+            : "Proposta sanitizada exportada para " + result.Value!.DirectoryPath;
+        RefreshPanel();
+    }
+
+    private async void OnPromoteWriteContract(object sender, RoutedEventArgs e)
+    {
+        var result = await _promoteWrite.ExecuteAsync(CancellationToken.None);
+        StatusText.Text = result.IsFailure
+            ? result.Error?.Message ?? "Falha ao gravar a proposta local."
+            : "Proposta CandidateOnly gravada sem alterar o adaptador: " + result.Value;
+        RefreshPanel();
+    }
+
+    private void OnCloseObserver(object sender, RoutedEventArgs e) => Close();
+
     private void OnCancel(object sender, RoutedEventArgs e)
     {
         _engine.Cancel();
@@ -398,16 +539,23 @@ public partial class ObservationWindow : Window
     private void RefreshPanel()
     {
         var counters = _engine.Counters;
-        CountersText.Text =
-            $"GET observados: {counters.GetsObserved}{Environment.NewLine}" +
-            $"GET permitidos: {counters.GetsAllowed}{Environment.NewLine}" +
-            $"Requisições bloqueadas: {counters.RequestsBlocked}{Environment.NewLine}" +
-            $"POST observados e bloqueados: {counters.PostsObservedAndBlocked}{Environment.NewLine}" +
-            "POST de configuração enviados: 0";
+        CountersText.Text = WriteContractProposalBuilder.OperatorCounters(counters, _engine.WriteCandidate)
+                            + Environment.NewLine
+                            + $"GET observados: {counters.GetsObserved}{Environment.NewLine}"
+                            + $"GET permitidos: {counters.GetsAllowed}{Environment.NewLine}"
+                            + $"Requisições bloqueadas: {counters.RequestsBlocked}{Environment.NewLine}"
+                            + $"POST observados e bloqueados: {counters.PostsObservedAndBlocked}";
         TableText.Text = _engine.ToOperatorTable();
+        StartWriteCaptureButton.IsEnabled = !_engine.WriteCaptureSpent && _engine.WriteCandidate is null;
         if (_engine.EndedByIpChange)
         {
             StatusText.Text = "Observação encerrada: destino diferente do IP da ONT.";
+        }
+        else if (_engine.WriteCandidate is not null
+                 && !StatusText.Text.Contains("Proposta", StringComparison.Ordinal)
+                 && !StatusText.Text.Contains("exportada", StringComparison.OrdinalIgnoreCase))
+        {
+            StatusText.Text = "Contrato candidato capturado e bloqueado. Feche o observador e abra uma nova sessão para outra tentativa.";
         }
     }
 
