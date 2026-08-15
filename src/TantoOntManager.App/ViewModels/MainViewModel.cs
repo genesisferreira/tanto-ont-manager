@@ -39,6 +39,7 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IPromoteReadContractUseCase _promoteContract;
     private readonly IExportWriteContractUseCase _exportWriteContract;
     private readonly IPromoteWriteContractUseCase _promoteWriteContract;
+    private readonly IExportWriteCapabilityUseCase _exportWriteCapability;
     private readonly IAuthenticateDeviceUseCase _authenticate;
     private readonly IEndAuthenticatedSessionUseCase _endSession;
     private readonly IOntAuthSessionStore _authSession;
@@ -101,6 +102,8 @@ public sealed class MainViewModel : ViewModelBase
     private string _sessionPhase = "Detecção pública";
     private string _observationText = "Observação GET indisponível até autenticar a F6201B e confirmar o modo laboratório.";
     private string _observationCounters = "GET observados: 0";
+    private string _writeCapabilityText = "Diagnóstico de capacidade de escrita indisponível até autenticar e observar a WAN.";
+    private string _writePromotionReason = "Promoção recusada: candidatos interceptados = 0.";
 
     public MainViewModel(
         IListEthernetAdaptersUseCase listAdapters,
@@ -114,6 +117,7 @@ public sealed class MainViewModel : ViewModelBase
         IPromoteReadContractUseCase promoteContract,
         IExportWriteContractUseCase exportWriteContract,
         IPromoteWriteContractUseCase promoteWriteContract,
+        IExportWriteCapabilityUseCase exportWriteCapability,
         IAuthenticateDeviceUseCase authenticate,
         IEndAuthenticatedSessionUseCase endSession,
         IOntAuthSessionStore authSession,
@@ -132,6 +136,7 @@ public sealed class MainViewModel : ViewModelBase
         _promoteContract = promoteContract;
         _exportWriteContract = exportWriteContract;
         _promoteWriteContract = promoteWriteContract;
+        _exportWriteCapability = exportWriteCapability;
         _authenticate = authenticate;
         _endSession = endSession;
         _authSession = authSession;
@@ -154,6 +159,7 @@ public sealed class MainViewModel : ViewModelBase
         ExportObservationCommand = new RelayCommand(ExportObservationAsync, CanExportObservation);
         PromoteContractCommand = new RelayCommand(PromoteContractAsync, CanPromoteContract);
         PromoteWriteContractCommand = new RelayCommand(PromoteWriteContractAsync, CanPromoteWriteContract);
+        ExportWriteCapabilityCommand = new RelayCommand(ExportWriteCapabilityAsync, CanExportObservation);
         LoadAdapters();
     }
 
@@ -176,6 +182,7 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand ExportObservationCommand { get; }
     public ICommand PromoteContractCommand { get; }
     public ICommand PromoteWriteContractCommand { get; }
+    public ICommand ExportWriteCapabilityCommand { get; }
 
     public string ProductName => "Tanto ONT Manager";
     public string ModeLabel => OperationMode.LaboratoryReadOnly.ToUiLabel();
@@ -343,6 +350,8 @@ public sealed class MainViewModel : ViewModelBase
     public string SessionPhase { get => _sessionPhase; set => SetProperty(ref _sessionPhase, value); }
     public string ObservationText { get => _observationText; set => SetProperty(ref _observationText, value); }
     public string ObservationCounters { get => _observationCounters; set => SetProperty(ref _observationCounters, value); }
+    public string WriteCapabilityText { get => _writeCapabilityText; set => SetProperty(ref _writeCapabilityText, value); }
+    public string WritePromotionReason { get => _writePromotionReason; set => SetProperty(ref _writePromotionReason, value); }
 
     public SecureString Password { get; private set; } = new();
 
@@ -842,7 +851,19 @@ public sealed class MainViewModel : ViewModelBase
         => CanExportObservation();
 
     private bool CanPromoteWriteContract()
-        => !IsBusy && (_observation.Engine?.WriteCandidate is not null || _observation.LastSnapshot?.WriteCandidate is not null);
+    {
+        if (IsBusy)
+        {
+            return false;
+        }
+
+        var snapshot = _observation.Engine?.Snapshot() ?? _observation.LastSnapshot;
+        var gate = WriteContractPromotionGate.Evaluate(snapshot);
+        WritePromotionReason = gate.IsFailure
+            ? gate.Error?.Message ?? "Promoção recusada."
+            : "A interface expõe escrita PPPoE observável; a promoção continua sendo só uma proposta local CandidateOnly.";
+        return gate.IsSuccess;
+    }
 
     private Task ObserveNavigationAsync()
     {
@@ -856,6 +877,17 @@ public sealed class MainViewModel : ViewModelBase
         var engine = new ObservationEngine(_authSession.Transport.BoundAddress);
         _observation.Attach(engine, folder);
         var snapshot = _authSession.Snapshot;
+        var profiles = snapshot?.Diagnostics.WanProfiles
+            .Select(profile => profile.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToList() ?? [];
+        engine.SetCapabilityContext(new WriteCapabilityContext(
+            snapshot?.Identity.Manufacturer,
+            snapshot?.Identity.Model,
+            snapshot?.FirmwareCompatibility ?? FirmwareCompatibility.Unconfirmed,
+            snapshot?.Identity.Firmware.SoftwareVersion,
+            Username,
+            profiles));
         var request = new ObservationLaunchRequest(
             _authSession.Transport.BoundAddress,
             _authSession.DomainSession.Endpoint.BaseUri,
@@ -865,7 +897,9 @@ public sealed class MainViewModel : ViewModelBase
             snapshot?.Identity.Model,
             snapshot?.FirmwareCompatibility ?? FirmwareCompatibility.Unconfirmed,
             snapshot?.Identity.Firmware.SoftwareVersion,
-            _authSession.DomainSession.IsAuthenticated);
+            _authSession.DomainSession.IsAuthenticated,
+            Username,
+            profiles);
         ObservationWindowRequested?.Invoke(this, request);
         ObservationText = "Observador GET aberto. Navegue manualmente nas telas Device/PON/WAN. POST permanece bloqueado.";
         LastOperation = "Observar navegação GET iniciado em WebView2 isolado.";
@@ -925,6 +959,24 @@ public sealed class MainViewModel : ViewModelBase
         });
     }
 
+    private async Task ExportWriteCapabilityAsync()
+    {
+        await RunBusyAsync("Exportar diagnóstico de capacidade", async () =>
+        {
+            RefreshObservationPanel();
+            var result = await _exportWriteCapability.ExecuteAsync(_cts.Token);
+            if (result.IsFailure || result.Value is null)
+            {
+                LastOperation = result.Error?.Message ?? "Falha ao exportar o diagnóstico de capacidade.";
+                return;
+            }
+
+            ExportPath = result.Value.DirectoryPath;
+            ZipInspection = result.Value.Inspection.ToOperatorText();
+            LastOperation = "Diagnóstico de capacidade sanitizado salvo em " + result.Value.DirectoryPath;
+        });
+    }
+
     private void StopObservation(string reason)
     {
         if (_observation.IsOpen || _observation.Engine is not null)
@@ -943,6 +995,8 @@ public sealed class MainViewModel : ViewModelBase
     public IExportWriteContractUseCase ExportWriteContract => _exportWriteContract;
 
     public IPromoteWriteContractUseCase PromoteWriteContract => _promoteWriteContract;
+
+    public IExportWriteCapabilityUseCase ExportWriteCapability => _exportWriteCapability;
 
     public void DeclineObservation() => StopObservation("não confirmado");
 
@@ -1000,6 +1054,10 @@ public sealed class MainViewModel : ViewModelBase
             + $"Requisições bloqueadas: {counters.RequestsBlocked}{Environment.NewLine}"
             + $"POST observados e bloqueados: {counters.PostsObservedAndBlocked}";
         ObservationText = snapshot.SummaryText;
+        WriteCapabilityText = snapshot.WriteCapability is null
+            ? "Diagnóstico de capacidade ainda sem evidências da página WAN."
+            : WriteCapabilityClassifier.ToOperatorText(snapshot.WriteCapability);
+        _ = CanPromoteWriteContract();
     }
 
     private void EndSessionIfBoundToDifferentIp()

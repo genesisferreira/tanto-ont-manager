@@ -41,3 +41,8 @@ public interface IPromoteWriteContractUseCase
 {
     Task<Result<string>> ExecuteAsync(CancellationToken cancellationToken);
 }
+
+public interface IExportWriteCapabilityUseCase
+{
+    Task<Result<WriteCapabilityExportResult>> ExecuteAsync(CancellationToken cancellationToken);
+}

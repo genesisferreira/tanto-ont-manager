@@ -169,6 +169,10 @@ public sealed record WriteContractExportResult(
     string ZipPath,
     ObservationZipInspection Inspection);
 
+public sealed record WriteCapabilityExportResult(
+    string DirectoryPath,
+    ObservationZipInspection Inspection);
+
 public sealed record ObservationSnapshot(
     System.Net.IPAddress BoundAddress,
     ObservationCounters Counters,
@@ -178,7 +182,8 @@ public sealed record ObservationSnapshot(
     string TableText,
     string SummaryText,
     WriteContractCandidate? WriteCandidate = null,
-    string WriteCaptureState = "Idle");
+    string WriteCaptureState = "Idle",
+    WriteCapabilityReport? WriteCapability = null);
 
 public static class ObservationScreens
 {

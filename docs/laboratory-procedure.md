@@ -67,6 +67,21 @@ Esta fase **não configura** a ONT. `ConfigurationRequestsSent` permanece 0.
 9. `Promover contrato de gravação` salva só um JSON local `CandidateOnly`. Não altera o adaptador F6201B nem a allowlist de escrita (continua vazia).
 10. A Fase 2B só pode começar depois de captura real bloqueada, revisão humana, backup, rollback e autorização separada.
 
+## Diagnóstico passivo de capacidade de escrita (Fase 2A.1)
+
+Esta fase **não configura** a ONT e **não contorna** permissões. `ConfigurationRequestsSent` permanece 0. A allowlist de escrita permanece vazia.
+
+1. Detecte a F6201B, autentique pelo fluxo homologado e confirme a firmware `V9.3.10P8N1`.
+2. Abra `Observar navegação GET` e inicie `Mapear gravação WAN/PPPoE — bloqueado` com a confirmação `MAPEAR F6201B`.
+3. Navegue **manualmente** até Internet → WAN. Abra os perfis visíveis e percorra a página até o rodapé.
+4. Clique em `Inspecionar estrutura do DOM`. O WebView2 executa só o script fixo de estrutura (nomes/ids/tipos, opções públicas, disabled/readonly/hidden). Nenhum clique automático, nenhum preenchimento e nenhum valor de senha.
+5. Confira a aba `Capacidade de escrita`: conta observada, firmware, perfis WAN, tipos de conexão, PPPoE/criar perfil/Apply-Save (Sim/Não/Não confirmado), controles bloqueados, evidências e próximo passo.
+6. Se PPPoE e criação não estiverem disponíveis, a conclusão tipada será uma de `PppoeOptionUnavailable`, `ReadOnlyAccount`, `PresetLocked` ou `InsufficientEvidence`. A ausência isolada de um botão **não** basta para concluir conta somente leitura ou preset.
+7. `Exportar diagnóstico de capacidade` grava em `%LocalAppData%\TantoTelecom\TantoOntManager\diagnostics\proposals\write-capability\` os arquivos `write-capability-report.json`, `write-capability-summary.txt` e `manifest.json`.
+8. `Promover contrato de gravação` permanece desabilitado quando candidatos = 0, PPPoE indisponível, Apply/Save ausente, firmware não confirmada ou a conta aparentar leitura/preset.
+
+Resultado homologado nesta firmware/conta `admin`: IP Type só DHCP/Static; sem PPPoE, Create New Item, Add, Apply ou Save; candidatos interceptados = 0; conclusão `PppoeOptionUnavailable`. Nenhuma tentativa de contornar permissões.
+
 ## Resultado esperado nesta fase
 
 - Resposta HTTPS do endereço testado (HTTP pode estar indisponível)

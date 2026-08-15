@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using TantoOntManager.Domain.Common;
+using TantoOntManager.Domain.Devices;
 
 namespace TantoOntManager.Domain.Observation;
 
@@ -28,6 +29,14 @@ public sealed class ObservationEngine : IDisposable
     private bool _writeSpent;
     private WriteContractCandidate? _writeCandidate;
     private readonly List<string> _writePrerequisites = [];
+    private WriteCapabilityContext? _capabilityContext;
+    private readonly List<string> _menuLeaves = [];
+    private readonly List<ObservedDomControl> _domControls = [];
+    private readonly List<string> _ipTypeOptions = [];
+    private readonly List<string> _typeOptions = [];
+    private readonly List<string> _linkTypeOptions = [];
+    private bool _footerReached;
+    private bool _wanPageObserved;
 
     public ObservationEngine(IPAddress boundAddress)
     {
@@ -190,8 +199,159 @@ public sealed class ObservationEngine : IDisposable
                 _structures.Add(ResponseStructureInspector.Inspect(normalized, contentType, body));
             }
 
+            IngestGetForCapability(request, screen, body);
             return record;
         }
+    }
+
+    public WriteCapabilityReport WriteCapability
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return BuildCapability();
+            }
+        }
+    }
+
+    public void SetCapabilityContext(WriteCapabilityContext context)
+    {
+        lock (_gate)
+        {
+            _capabilityContext = context;
+        }
+    }
+
+    public void IngestDomSnapshot(WriteCapabilityDomSnapshot snapshot)
+    {
+        lock (_gate)
+        {
+            foreach (var leaf in snapshot.MenuLeaves)
+            {
+                AddUnique(_menuLeaves, leaf);
+            }
+
+            _footerReached |= snapshot.PageScrolledToFooter;
+            foreach (var control in snapshot.Controls)
+            {
+                _domControls.Add(control);
+                ClassifySelectOptions(control);
+                if (LooksLikeWanControl(control))
+                {
+                    _wanPageObserved = true;
+                }
+            }
+
+            if (_screen is ObservationScreen.WanConfig or ObservationScreen.WanStatus)
+            {
+                _wanPageObserved = true;
+            }
+        }
+    }
+
+    private void IngestGetForCapability(IncomingObservationRequest request, ObservationScreen screen, string? body)
+    {
+        var tag = ObservationUrl.TagOf(request.Uri) ?? string.Empty;
+        if (tag.Contains("ethWan", StringComparison.OrdinalIgnoreCase)
+            || tag.Contains("wan_internet", StringComparison.OrdinalIgnoreCase)
+            || screen is ObservationScreen.WanConfig or ObservationScreen.WanStatus)
+        {
+            _wanPageObserved = true;
+        }
+
+        var scan = WriteCapabilityTokenScanner.Scan(body);
+        foreach (var item in scan.IpTypeHints)
+        {
+            AddUnique(_ipTypeOptions, item);
+        }
+    }
+
+    private void ClassifySelectOptions(ObservedDomControl control)
+    {
+        if (control.OptionValues.Count == 0)
+        {
+            return;
+        }
+
+        var key = (control.Name + " " + control.Id + " " + control.Type).Trim();
+        if (RegexLooksLike(key, "(iptype|ip_type|addresstype|ipv4type|wanip)"))
+        {
+            foreach (var option in control.OptionValues)
+            {
+                AddUnique(_ipTypeOptions, option);
+            }
+
+            return;
+        }
+
+        if (RegexLooksLike(key, "linktype|link_type"))
+        {
+            foreach (var option in control.OptionValues)
+            {
+                AddUnique(_linkTypeOptions, option);
+            }
+
+            return;
+        }
+
+        if (control.OptionValues.Any(item => item.Equals("DHCP", StringComparison.OrdinalIgnoreCase))
+            && control.OptionValues.Any(item => item.Equals("Static", StringComparison.OrdinalIgnoreCase)))
+        {
+            foreach (var option in control.OptionValues)
+            {
+                AddUnique(_ipTypeOptions, option);
+            }
+
+            return;
+        }
+
+        if (RegexLooksLike(key, "(^|[^a-z])type([^a-z]|$)"))
+        {
+            foreach (var option in control.OptionValues)
+            {
+                AddUnique(_typeOptions, option);
+            }
+        }
+    }
+
+    private WriteCapabilityReport BuildCapability()
+    {
+        var context = _capabilityContext;
+        return WriteCapabilityClassifier.Evaluate(new WriteCapabilityFacts(
+            context?.Manufacturer,
+            context?.Model,
+            context?.Firmware ?? FirmwareCompatibility.Unconfirmed,
+            context?.SoftwareVersion,
+            context?.ObservedUsername,
+            _menuLeaves.ToList(),
+            context?.WanProfiles ?? [],
+            _typeOptions.ToList(),
+            _linkTypeOptions.ToList(),
+            _ipTypeOptions.ToList(),
+            _domControls.ToList(),
+            _footerReached,
+            _wanPageObserved,
+            _writeCandidate is null ? 0 : 1,
+            0));
+    }
+
+    private static bool LooksLikeWanControl(ObservedDomControl control)
+        => RegexLooksLike(control.Name + control.Id + control.Type, "(wan|vlan|iptype|pppoe|dhcp|static)");
+
+    private static bool RegexLooksLike(string? text, string pattern)
+        => !string.IsNullOrWhiteSpace(text)
+           && System.Text.RegularExpressions.Regex.IsMatch(text, "(?i)" + pattern);
+
+    private static void AddUnique(List<string> list, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || list.Exists(item => item.Equals(value, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        list.Add(value.Trim());
     }
 
     public Result StartBlockedWriteCapture(WriteCaptureEligibilityInput eligibility)
@@ -351,6 +511,10 @@ public sealed class ObservationEngine : IDisposable
             _baselineClosed = true;
             _screen = screen;
             _captureUntil = DateTimeOffset.UtcNow.Add(CaptureWindow);
+            if (screen is ObservationScreen.WanConfig or ObservationScreen.WanStatus)
+            {
+                _wanPageObserved = true;
+            }
         }
     }
 
@@ -566,7 +730,8 @@ public sealed class ObservationEngine : IDisposable
                 ToOperatorTable(),
                 ToSummaryText(),
                 _writeCandidate,
-                _writePhase.ToString());
+                _writePhase.ToString(),
+                BuildCapability());
         }
     }
 

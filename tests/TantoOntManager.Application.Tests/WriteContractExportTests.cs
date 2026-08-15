@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using TantoOntManager.DeviceAdapters.Abstractions;
 using TantoOntManager.Domain.Common;
+using TantoOntManager.Domain.Devices;
 using TantoOntManager.Domain.Discovery;
 using TantoOntManager.Domain.Network;
 using TantoOntManager.Domain.Observation;
@@ -74,7 +75,7 @@ public sealed class WriteContractExportTests
         var beforeAdapter = File.ReadAllText(adapter);
         var beforeReader = File.ReadAllText(reader);
         var beforeAllowlist = File.ReadAllText(allowlist);
-        var engine = SeedWriteEngine();
+        var engine = SeedWriteEngineWithWriteUi();
         var observation = new ObservationSessionStore();
         observation.Attach(engine, Path.Combine(root, "webview"));
         var useCase = new PromoteWriteContractUseCase(
@@ -158,14 +159,15 @@ public sealed class WriteContractExportTests
     public void Observer_source_does_not_inject_javascript_or_click_automatically()
     {
         var source = File.ReadAllText(RepoPath("src", "TantoOntManager.App", "Observation", "ObservationWindow.xaml.cs"));
-        source.Should().NotContain("ExecuteScriptAsync");
+        source.Should().Contain("ExecuteScriptAsync(WriteCapabilityDomScript.Source)");
         source.Should().NotContain("AddScriptToExecuteOnDocumentCreated");
-        source.Should().NotContain("ExecuteScript(");
         source.Should().NotContain("InvokeScript");
         source.Should().NotContain("Click()");
         source.Should().NotContain("PerformClick");
         source.Should().Contain("CreateWebResourceResponse");
         source.Should().Contain("args.Response = CreateBlockedResponse()");
+        source.Should().Contain("WriteCapabilityDomScript.IsSafe()");
+        (source.Split("ExecuteScriptAsync").Length - 1).Should().Be(1);
     }
 
     private static ObservationEngine SeedWriteEngine()
@@ -182,6 +184,27 @@ public sealed class WriteContractExportTests
         engine.Evaluate(
             new IncomingObservationRequest("POST", new Uri("https://192.168.100.1/?_type=menuData&_tag=wanSave")),
             payload);
+        return engine;
+    }
+
+    private static ObservationEngine SeedWriteEngineWithWriteUi()
+    {
+        var engine = SeedWriteEngine();
+        engine.SetCapabilityContext(new WriteCapabilityContext(
+            "ZTE",
+            "F6201B",
+            FirmwareCompatibility.ConfirmedCompatible,
+            "V9.3.10P8N1",
+            "admin",
+            ["HSI_TR069", "VOIP_IPTV"]));
+        engine.StartScreenCapture(ObservationScreen.WanConfig);
+        engine.IngestDomSnapshot(new WriteCapabilityDomSnapshot(
+            ["Internet", "WAN"],
+            [
+                new ObservedDomControl("SELECT", "IPType", "ipType", "select-one", false, false, false, ["DHCP", "Static", "PPPoE"], null, null, false),
+                new ObservedDomControl("BUTTON", "btnApply", "Apply", "submit", false, false, false, [], "Apply", "onApply", false)
+            ],
+            true));
         return engine;
     }
 

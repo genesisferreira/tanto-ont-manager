@@ -12,6 +12,13 @@ public static class WriteContractContentInspector
         "manifest.json"
     ];
 
+    public static readonly IReadOnlyList<string> CapabilityEntryNames =
+    [
+        "write-capability-report.json",
+        "write-capability-summary.txt",
+        "manifest.json"
+    ];
+
     public static ObservationZipInspection Inspect(string text, IReadOnlyList<string> entryNames)
     {
         var cookies = Regex.IsMatch(text, "(?i)(set-cookie\\s*:|SID_HTTPS_=)");
@@ -24,7 +31,8 @@ public static class WriteContractContentInspector
         var authorization = Regex.IsMatch(text, "(?i)authorization\\s*[:=]\\s*(?!\\[redacted\\])\\S+");
         var fullHeaders = Regex.IsMatch(text, "(?i)\"headers\"\\s*:\\s*\\{");
         var namesAllowed = entryNames.Count > 0
-                           && entryNames.All(name => AllowedEntryNames.Contains(name, StringComparer.OrdinalIgnoreCase));
+                           && (entryNames.All(name => AllowedEntryNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+                               || entryNames.All(name => CapabilityEntryNames.Contains(name, StringComparer.OrdinalIgnoreCase)));
         var masked = namesAllowed && !cookies && !credentials && !tokens && !html && !rawBody && !authorization && !fullHeaders;
         return new ObservationZipInspection(
             cookies,

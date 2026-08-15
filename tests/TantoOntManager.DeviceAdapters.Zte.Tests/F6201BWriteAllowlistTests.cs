@@ -52,4 +52,8 @@ public sealed class Phase2AHomologatedReadRegressionTests
             .And.Contain("TypeUplink=2")
             .And.Contain("pageType=0");
     }
+
+    [Fact]
+    public void Phase2A1_regression_device_pon_wan_routes_remain_homologated()
+        => Phase2A_regression_device_pon_wan_routes_remain_homologated();
 }

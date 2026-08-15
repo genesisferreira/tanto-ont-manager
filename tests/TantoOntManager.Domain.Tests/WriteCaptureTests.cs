@@ -119,6 +119,23 @@ public sealed class WriteCaptureTests
     }
 
     [Fact]
+    public void Phase2A1_post_put_patch_delete_remain_blocked_before_network()
+    {
+        using var engine = Capturing();
+        foreach (var method in new[] { "POST", "PUT", "PATCH", "DELETE" })
+        {
+            var decision = engine.Evaluate(
+                new IncomingObservationRequest(method, new Uri("https://192.168.100.1/?_type=menuData&_tag=wanSave")),
+                Payload(FormBody));
+            decision.Allowed.Should().BeFalse();
+            WriteCaptureEligibility.AllowsNetwork(decision).Should().BeFalse();
+        }
+
+        engine.Counters.ConfigurationPostsSent.Should().Be(0);
+        engine.WriteCapability.ConfigurationRequestsSent.Should().Be(0);
+    }
+
+    [Fact]
     public void Configuration_requests_sent_remain_zero()
     {
         using var engine = Capturing();

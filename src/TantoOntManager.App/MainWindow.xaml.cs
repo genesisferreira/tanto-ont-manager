@@ -62,7 +62,8 @@ public partial class MainWindow : Window
             store,
             request,
             viewModel.ExportWriteContract,
-            viewModel.PromoteWriteContract) { Owner = this };
+            viewModel.PromoteWriteContract,
+            viewModel.ExportWriteCapability) { Owner = this };
         _observationWindow.InitializationFailed += (_, result) => viewModel.ReportObserverInitializationFailure(result);
         _observationWindow.WriteCaptureIncompatible += (_, message) => viewModel.HandleWriteCaptureIncompatible(message);
         _observationWindow.Closed += (_, _) =>

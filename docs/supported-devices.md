@@ -4,7 +4,7 @@
 
 | Fabricante | Modelo | Status | Observação |
 |---|---|---|---|
-| ZTE | ZXHN F6201B | Detecção pública + leitura automática autenticada 0.1.8-lab + mapeamento WAN/PPPoE bloqueado | HTTPS `192.168.100.1`; GET homologados menuView+menuData Device/PON/WAN; aliases XML lua Device/PON; logout oficial no clique; POST de configuração bloqueado antes da rede |
+| ZTE | ZXHN F6201B | Detecção pública + leitura automática autenticada 0.1.8.1-lab + diagnóstico passivo de capacidade de escrita | HTTPS `192.168.100.1`; GET homologados menuView+menuData Device/PON/WAN; aliases XML lua Device/PON; logout oficial no clique; POST de configuração bloqueado antes da rede; allowlist de escrita vazia |
 | ZTE | ZXHN F6600P | Estrutura apenas | Sem detector específico |
 | ZTE | ZXHN F670L | Estrutura apenas | Sem detector específico |
 | Zyxel | PM5301-T7 | Futuro | Sem adaptador |

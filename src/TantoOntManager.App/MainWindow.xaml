@@ -282,6 +282,18 @@
           </ScrollViewer>
         </TabItem>
 
+        <TabItem Header="Capacidade de escrita">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <TextBlock Text="Diagnóstico passivo da interface autenticada — sem contornar permissões e sem enviar configuração." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding WriteCapabilityText}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Margin="0,0,0,12" />
+              <Button Content="Exportar diagnóstico de capacidade" Command="{Binding ExportWriteCapabilityCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+              <Button Content="Promover contrato de gravação" Command="{Binding PromoteWriteContractCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+              <TextBlock Text="{Binding WritePromotionReason}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+
         <TabItem Header="Mapa">
           <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel>

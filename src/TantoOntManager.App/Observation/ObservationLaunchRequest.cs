@@ -15,8 +15,13 @@ public sealed record ObservationLaunchRequest(
     string? Model = null,
     FirmwareCompatibility Firmware = FirmwareCompatibility.Unconfirmed,
     string? SoftwareVersion = null,
-    bool Authenticated = false)
+    bool Authenticated = false,
+    string? Username = null,
+    IReadOnlyList<string>? WanProfiles = null)
 {
     public WriteCaptureEligibilityInput WriteEligibility(string? confirmation)
         => new(Manufacturer, Model, Firmware, SoftwareVersion, Authenticated, confirmation);
+
+    public WriteCapabilityContext CapabilityContext()
+        => new(Manufacturer, Model, Firmware, SoftwareVersion, Username, WanProfiles ?? []);
 }

@@ -88,6 +88,14 @@ public sealed class BoundOntTransportTests
         => await Logout_post_is_allowed_once_after_login();
 
     [Fact]
+    public async Task Phase2A1_regression_login_post_remains_one_per_click()
+        => await Phase2A_regression_login_post_remains_one_per_click();
+
+    [Fact]
+    public async Task Phase2A1_regression_logout_post_remains_at_most_one()
+        => await Phase2A_regression_logout_post_remains_at_most_one();
+
+    [Fact]
     public async Task Proven_extra_query_is_allowed_unproven_is_not()
     {
         var handler = new ScriptedHandler();

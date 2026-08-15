@@ -29,13 +29,13 @@ public sealed class PromoteWriteContractUseCase : IPromoteWriteContractUseCase
     public Task<Result<string>> ExecuteAsync(CancellationToken cancellationToken)
     {
         var snapshot = _observation.Engine?.Snapshot() ?? _observation.LastSnapshot;
-        var candidate = snapshot?.WriteCandidate;
-        if (snapshot is null || candidate is null)
+        var gate = WriteContractPromotionGate.Evaluate(snapshot);
+        if (gate.IsFailure)
         {
-            return Task.FromResult(Result.Failure<string>(Error.Create(
-                ErrorCodes.WriteCaptureNotCaptured,
-                "Promova o contrato de gravação somente depois de interceptar um candidato bloqueado.")));
+            return Task.FromResult(Result.Failure<string>(gate.Error!));
         }
+
+        var candidate = snapshot!.WriteCandidate!;
 
         var proposal = WriteContractProposalBuilder.FromCandidate(candidate);
         var payload = ObservationSanitizer.SanitizeText(JsonSerializer.Serialize(new

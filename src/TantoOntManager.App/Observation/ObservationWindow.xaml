@@ -33,7 +33,10 @@
             <Button x:Name="StartWriteCaptureButton" Content="Iniciar captura bloqueada" Click="OnStartWriteCapture" Margin="0,0,0,6" />
             <Button Content="Cancelar captura" Click="OnCancelWriteCapture" Style="{StaticResource SecondaryButton}" Margin="0,0,0,6" />
             <Button Content="Exportar proposta sanitizada" Click="OnExportWriteContract" Margin="0,0,0,6" />
-            <Button Content="Promover contrato de gravação" Click="OnPromoteWriteContract" Style="{StaticResource SecondaryButton}" Margin="0,0,0,6" />
+            <Button x:Name="PromoteWriteButton" Content="Promover contrato de gravação" Click="OnPromoteWriteContract" Style="{StaticResource SecondaryButton}" Margin="0,0,0,6" />
+            <TextBlock x:Name="PromotionReasonText" Foreground="#A8A8A8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
+            <Button Content="Inspecionar estrutura do DOM" Click="OnInspectDom" Margin="0,0,0,6" />
+            <Button Content="Exportar diagnóstico de capacidade" Click="OnExportWriteCapability" Margin="0,0,0,6" />
             <Button Content="Fechar observador" Click="OnCloseObserver" Style="{StaticResource SecondaryButton}" Margin="0,0,0,12" />
             <TextBlock Text="Contadores" Foreground="#F5C400" FontWeight="SemiBold" Margin="0,0,0,6" />
             <TextBlock x:Name="CountersText" Foreground="#F3F3F3" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />

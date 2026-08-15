@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using TantoOntManager.Application.Contracts;
+using TantoOntManager.DeviceAdapters.Zte.Auth;
 using TantoOntManager.Domain.Common;
 using TantoOntManager.Domain.Observation;
 
@@ -16,6 +17,7 @@ public partial class ObservationWindow : Window
     private readonly ObservationLaunchRequest _request;
     private readonly IExportWriteContractUseCase _exportWrite;
     private readonly IPromoteWriteContractUseCase _promoteWrite;
+    private readonly IExportWriteCapabilityUseCase _exportCapability;
     private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly HashSet<string> _allowedRequests = new(StringComparer.OrdinalIgnoreCase);
     private readonly ObserverStartupState _startup = new();
@@ -27,7 +29,8 @@ public partial class ObservationWindow : Window
         IObservationSessionStore store,
         ObservationLaunchRequest request,
         IExportWriteContractUseCase exportWrite,
-        IPromoteWriteContractUseCase promoteWrite)
+        IPromoteWriteContractUseCase promoteWrite,
+        IExportWriteCapabilityUseCase exportCapability)
     {
         InitializeComponent();
         _engine = engine;
@@ -35,6 +38,7 @@ public partial class ObservationWindow : Window
         _request = request;
         _exportWrite = exportWrite;
         _promoteWrite = promoteWrite;
+        _exportCapability = exportCapability;
         Closed += (_, _) => Cleanup();
         _refresh.Tick += (_, _) => RefreshPanel();
         Loaded += OnLoaded;
@@ -119,6 +123,17 @@ public partial class ObservationWindow : Window
                     ? CoreWebView2ServerCertificateErrorAction.AlwaysAllow
                     : CoreWebView2ServerCertificateErrorAction.Cancel;
             };
+            core.NavigationCompleted += async (_, args) =>
+            {
+                if (!args.IsSuccess)
+                {
+                    return;
+                }
+
+                await InspectDomStructureAsync();
+            };
+
+            _engine.SetCapabilityContext(_request.CapabilityContext());
 
             if (_startup.TryTransferCookies())
             {
@@ -344,6 +359,8 @@ public partial class ObservationWindow : Window
                 TryHeader(args.Response.Headers, "Content-Type"),
                 body,
                 TryHeader(args.Request.Headers, "Referer"));
+            IngestMenuLeaves(body);
+            body = null;
             await Dispatcher.InvokeAsync(RefreshPanel);
         }
         catch (Exception)
@@ -452,6 +469,26 @@ public partial class ObservationWindow : Window
         }
     }
 
+    private void IngestMenuLeaves(string? html)
+    {
+        if (string.IsNullOrEmpty(html) || html.IndexOf("menuTreeJSON", StringComparison.Ordinal) < 0)
+        {
+            return;
+        }
+
+        var names = F6201BMenuTreeExtractor.Extract(html)
+            .Select(node => node.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name) && !WriteBodyInspector.IsSensitiveName(name!))
+            .Select(name => name!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(80)
+            .ToList();
+        if (names.Count > 0)
+        {
+            _engine.IngestDomSnapshot(new WriteCapabilityDomSnapshot(names, [], false));
+        }
+    }
+
     private void OnDevice(object sender, RoutedEventArgs e) => Capture(ObservationScreen.Device);
 
     private void OnPon(object sender, RoutedEventArgs e) => Capture(ObservationScreen.Pon);
@@ -518,6 +555,41 @@ public partial class ObservationWindow : Window
         RefreshPanel();
     }
 
+    private async void OnInspectDom(object sender, RoutedEventArgs e)
+    {
+        await InspectDomStructureAsync();
+        StatusText.Text = "Estrutura do DOM inspecionada localmente. Nenhum evento da ONT foi invocado.";
+        RefreshPanel();
+    }
+
+    private async Task InspectDomStructureAsync()
+    {
+        try
+        {
+            var core = WebView.CoreWebView2;
+            if (core is null || !WriteCapabilityDomScript.IsSafe())
+            {
+                return;
+            }
+
+            var json = await core.ExecuteScriptAsync(WriteCapabilityDomScript.Source);
+            _engine.IngestDomSnapshot(WriteCapabilityDomParser.Parse(json));
+        }
+        catch (Exception)
+        {
+            // inspeção passiva; não derruba o observador
+        }
+    }
+
+    private async void OnExportWriteCapability(object sender, RoutedEventArgs e)
+    {
+        var result = await _exportCapability.ExecuteAsync(CancellationToken.None);
+        StatusText.Text = result.IsFailure
+            ? result.Error?.Message ?? "Falha ao exportar o diagnóstico de capacidade."
+            : "Diagnóstico de capacidade exportado para " + result.Value!.DirectoryPath;
+        RefreshPanel();
+    }
+
     private void OnCloseObserver(object sender, RoutedEventArgs e) => Close();
 
     private void OnCancel(object sender, RoutedEventArgs e)
@@ -547,6 +619,11 @@ public partial class ObservationWindow : Window
                             + $"POST observados e bloqueados: {counters.PostsObservedAndBlocked}";
         TableText.Text = _engine.ToOperatorTable();
         StartWriteCaptureButton.IsEnabled = !_engine.WriteCaptureSpent && _engine.WriteCandidate is null;
+        var gate = WriteContractPromotionGate.Evaluate(_engine.Snapshot());
+        PromoteWriteButton.IsEnabled = gate.IsSuccess;
+        PromotionReasonText.Text = gate.IsFailure
+            ? gate.Error?.Message ?? "Promoção recusada."
+            : "A interface expõe escrita PPPoE observável; a promoção continua sendo só uma proposta local.";
         if (_engine.EndedByIpChange)
         {
             StatusText.Text = "Observação encerrada: destino diferente do IP da ONT.";

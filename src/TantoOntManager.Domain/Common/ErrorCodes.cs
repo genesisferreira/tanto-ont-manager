@@ -54,4 +54,6 @@ public static class ErrorCodes
     public const string WriteCaptureAlreadyUsed = "WRITE.ALREADY_USED";
     public const string WriteCaptureNotCaptured = "WRITE.NOT_CAPTURED";
     public const string WriteCaptureExportInspectionFailed = "WRITE.EXPORT_INSPECTION_FAILED";
+    public const string WritePromotionBlocked = "WRITE.PROMOTION_BLOCKED";
+    public const string WriteCapabilityExportInspectionFailed = "WRITE.CAPABILITY_EXPORT_INSPECTION_FAILED";
 }
